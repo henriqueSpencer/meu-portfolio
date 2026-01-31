@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { Home, Car, Package, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Home, Car, Package, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
+import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 
 // ---------------------------------------------------------------------------
 // Shared glass-card style token (consistent with other tabs)
@@ -40,8 +41,60 @@ function iconBadgeClass(type) {
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
+const EMPTY_ASSET = {
+  description: '', type: 'Imovel', estimatedValue: '', acquisitionDate: '',
+  includeInTotal: true,
+};
+
 export default function RealAssetsTab() {
   const { realAssets, setRealAssets, currency, exchangeRate } = useApp();
+
+  // ---- CRUD state ----
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(EMPTY_ASSET);
+
+  function handleAdd() {
+    setEditing(null);
+    setForm(EMPTY_ASSET);
+    setModalOpen(true);
+  }
+
+  function handleEdit(asset) {
+    setEditing(asset);
+    setForm({
+      description: asset.description,
+      type: asset.type,
+      estimatedValue: String(asset.estimatedValue),
+      acquisitionDate: asset.acquisitionDate || '',
+      includeInTotal: asset.includeInTotal,
+    });
+    setModalOpen(true);
+  }
+
+  function handleSave() {
+    const parsed = {
+      id: editing ? editing.id : String(Date.now()),
+      description: form.description.trim(),
+      type: form.type,
+      estimatedValue: Number(form.estimatedValue) || 0,
+      acquisitionDate: form.acquisitionDate,
+      includeInTotal: form.includeInTotal,
+    };
+    if (!parsed.description) return;
+    if (editing) {
+      setRealAssets((prev) => prev.map((a) => (a.id === editing.id ? parsed : a)));
+    } else {
+      setRealAssets((prev) => [...prev, parsed]);
+    }
+    setModalOpen(false);
+  }
+
+  function handleDelete() {
+    if (!editing) return;
+    setRealAssets((prev) => prev.filter((a) => a.id !== editing.id));
+    setModalOpen(false);
+  }
 
   // ---- Derived totals ------------------------------------------------------
   const totalValue = useMemo(
@@ -77,9 +130,17 @@ export default function RealAssetsTab() {
       {/* 1. Summary Card                                                      */}
       {/* ------------------------------------------------------------------- */}
       <div className={`${GLASS} p-6`}>
-        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-slate-400">
-          Resumo - Ativos Imobilizados
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-slate-400">
+            Resumo - Ativos Imobilizados
+          </h2>
+          <button
+            onClick={handleAdd}
+            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600/20 px-3 py-1.5 text-xs font-medium text-indigo-400 hover:bg-indigo-600/30 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Adicionar Ativo
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {/* Total value */}
@@ -127,7 +188,8 @@ export default function RealAssetsTab() {
             return (
               <div
                 key={asset.id}
-                className={`${GLASS} glass-card-hover p-5 transition-colors`}
+                onClick={() => handleEdit(asset)}
+                className={`${GLASS} glass-card-hover p-5 transition-colors cursor-pointer`}
               >
                 {/* Card header: icon + description */}
                 <div className="mb-4 flex items-start gap-3">
@@ -173,7 +235,7 @@ export default function RealAssetsTab() {
                 <div className="flex items-center gap-3 border-t border-white/5 pt-3">
                   <button
                     type="button"
-                    onClick={() => handleToggleInclude(asset.id)}
+                    onClick={(e) => { e.stopPropagation(); handleToggleInclude(asset.id); }}
                     className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-white/5"
                     aria-pressed={included}
                     aria-label={
@@ -207,6 +269,51 @@ export default function RealAssetsTab() {
           })}
         </div>
       )}
+      {/* ---- CRUD Modal ---- */}
+      <FormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Editar ${editing.description}` : 'Adicionar Ativo Imobilizado'}
+        onSave={handleSave}
+        onDelete={editing ? handleDelete : undefined}
+      >
+        <FormField label="Descricao">
+          <FormInput value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Apartamento 2Q - Belo Horizonte" />
+        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Tipo">
+            <FormSelect value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+              <option value="Imovel">Imovel</option>
+              <option value="Veiculo">Veiculo</option>
+              <option value="Outro">Outro</option>
+            </FormSelect>
+          </FormField>
+          <FormField label="Valor Estimado">
+            <FormInput type="number" step="0.01" value={form.estimatedValue} onChange={(e) => setForm((f) => ({ ...f, estimatedValue: e.target.value }))} />
+          </FormField>
+        </div>
+        <FormField label="Data de Aquisicao">
+          <FormInput type="date" value={form.acquisitionDate} onChange={(e) => setForm((f) => ({ ...f, acquisitionDate: e.target.value }))} />
+        </FormField>
+        <FormField label="Incluir no Patrimonio">
+          <div className="flex items-center gap-3 mt-1">
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, includeInTotal: !f.includeInTotal }))}
+              className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-white/5"
+            >
+              {form.includeInTotal ? (
+                <ToggleRight size={28} className="text-emerald-400" />
+              ) : (
+                <ToggleLeft size={28} className="text-slate-500" />
+              )}
+            </button>
+            <span className={`text-xs ${form.includeInTotal ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {form.includeInTotal ? 'Sim' : 'Nao'}
+            </span>
+          </div>
+        </FormField>
+      </FormModal>
     </section>
   );
 }

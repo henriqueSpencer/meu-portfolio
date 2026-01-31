@@ -17,8 +17,9 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { Shield, Calendar, TrendingUp } from 'lucide-react';
+import { Shield, Calendar, TrendingUp, Plus } from 'lucide-react';
 import { CHART_COLORS } from '../../data/mockData';
+import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 
 // -------------------------------------------------------
 // Color mapping for bond types
@@ -67,10 +68,68 @@ function MaturityTooltip({ active, payload }) {
 // -------------------------------------------------------
 // Main component
 // -------------------------------------------------------
+const EMPTY_BOND = {
+  title: '', type: 'Tesouro Direto', rate: '', appliedValue: '', currentValue: '',
+  applicationDate: '', maturityDate: '', broker: '',
+};
+
 export default function FixedIncomeTab() {
-  const { fixedIncome, currency, exchangeRate } = useApp();
+  const { fixedIncome, setFixedIncome, currency, exchangeRate } = useApp();
   const [sortField, setSortField] = useState('maturityDate');
   const [sortAsc, setSortAsc] = useState(true);
+
+  // ---- CRUD state ----
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(EMPTY_BOND);
+
+  function handleAdd() {
+    setEditing(null);
+    setForm(EMPTY_BOND);
+    setModalOpen(true);
+  }
+
+  function handleEdit(bond) {
+    setEditing(bond);
+    setForm({
+      title: bond.title,
+      type: bond.type,
+      rate: bond.rate,
+      appliedValue: String(bond.appliedValue),
+      currentValue: String(bond.currentValue),
+      applicationDate: bond.applicationDate || '',
+      maturityDate: bond.maturityDate || '',
+      broker: bond.broker || '',
+    });
+    setModalOpen(true);
+  }
+
+  function handleSave() {
+    const parsed = {
+      id: editing ? editing.id : String(Date.now()),
+      title: form.title.trim(),
+      type: form.type,
+      rate: form.rate.trim(),
+      appliedValue: Number(form.appliedValue) || 0,
+      currentValue: Number(form.currentValue) || 0,
+      applicationDate: form.applicationDate,
+      maturityDate: form.maturityDate,
+      broker: form.broker.trim(),
+    };
+    if (!parsed.title) return;
+    if (editing) {
+      setFixedIncome((prev) => prev.map((b) => (b.id === editing.id ? parsed : b)));
+    } else {
+      setFixedIncome((prev) => [...prev, parsed]);
+    }
+    setModalOpen(false);
+  }
+
+  function handleDelete() {
+    if (!editing) return;
+    setFixedIncome((prev) => prev.filter((b) => b.id !== editing.id));
+    setModalOpen(false);
+  }
 
   // ---- derived calculations ----
   const summary = useMemo(() => {
@@ -225,6 +284,12 @@ export default function FixedIncomeTab() {
           <h2 className="text-lg font-semibold text-slate-200">
             Titulos de Renda Fixa
           </h2>
+          <button
+            onClick={handleAdd}
+            className="ml-2 inline-flex items-center gap-1 rounded-lg bg-indigo-600/20 px-3 py-1.5 text-xs font-medium text-indigo-400 hover:bg-indigo-600/30 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Adicionar Titulo
+          </button>
         </div>
 
         <div className="overflow-x-auto">
@@ -265,7 +330,8 @@ export default function FixedIncomeTab() {
                 return (
                   <tr
                     key={bond.id}
-                    className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                    onClick={() => handleEdit(bond)}
+                    className="border-b border-white/5 hover:bg-white/[0.03] transition-colors cursor-pointer"
                   >
                     <td className="py-3 px-3 text-slate-200 font-medium whitespace-nowrap">
                       {bond.title}
@@ -404,6 +470,50 @@ export default function FixedIncomeTab() {
           Referencia: {new Date().toLocaleDateString('pt-BR')}
         </p>
       </div>
+
+      {/* ---- CRUD Modal ---- */}
+      <FormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Editar ${editing.title}` : 'Adicionar Titulo'}
+        onSave={handleSave}
+        onDelete={editing ? handleDelete : undefined}
+      >
+        <FormField label="Titulo">
+          <FormInput value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Tesouro IPCA+ 2029" />
+        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Tipo">
+            <FormSelect value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+              {['Tesouro Direto', 'CDB', 'LCI', 'LCA', 'Debenture', 'CRI', 'CRA'].map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </FormSelect>
+          </FormField>
+          <FormField label="Corretora">
+            <FormInput value={form.broker} onChange={(e) => setForm((f) => ({ ...f, broker: e.target.value }))} placeholder="BTG" />
+          </FormField>
+        </div>
+        <FormField label="Taxa">
+          <FormInput value={form.rate} onChange={(e) => setForm((f) => ({ ...f, rate: e.target.value }))} placeholder="IPCA + 6.20%" />
+        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Valor Aplicado">
+            <FormInput type="number" step="0.01" value={form.appliedValue} onChange={(e) => setForm((f) => ({ ...f, appliedValue: e.target.value }))} />
+          </FormField>
+          <FormField label="Valor Atual">
+            <FormInput type="number" step="0.01" value={form.currentValue} onChange={(e) => setForm((f) => ({ ...f, currentValue: e.target.value }))} />
+          </FormField>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Data Aplicacao">
+            <FormInput type="date" value={form.applicationDate} onChange={(e) => setForm((f) => ({ ...f, applicationDate: e.target.value }))} />
+          </FormField>
+          <FormField label="Data Vencimento">
+            <FormInput type="date" value={form.maturityDate} onChange={(e) => setForm((f) => ({ ...f, maturityDate: e.target.value }))} />
+          </FormField>
+        </div>
+      </FormModal>
     </div>
   );
 }

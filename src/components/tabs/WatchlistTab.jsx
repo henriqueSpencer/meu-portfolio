@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatBRL, formatCurrency, formatPct } from '../../utils/formatters';
-import { Eye, Bell, BellRing, Tag, Filter } from 'lucide-react';
+import { Eye, Bell, BellRing, Tag, Filter, Plus } from 'lucide-react';
+import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 
 // ---------------------------------------------------------------------------
 // Shared glass-card style token (consistent with other tabs)
@@ -22,9 +23,64 @@ const FILTERS = [
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
+const EMPTY_WATCHLIST = {
+  ticker: '', name: '', sector: '', currentPrice: '', fairPrice: '',
+  targetPrice: '', status: 'Interesse',
+};
+
 export default function WatchlistTab() {
   const { watchlist, setWatchlist, currency, exchangeRate } = useApp();
   const [activeFilter, setActiveFilter] = useState('Todos');
+
+  // ---- CRUD state ----
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(EMPTY_WATCHLIST);
+
+  function handleAdd() {
+    setEditing(null);
+    setForm(EMPTY_WATCHLIST);
+    setModalOpen(true);
+  }
+
+  function handleEdit(item) {
+    setEditing(item);
+    setForm({
+      ticker: item.ticker,
+      name: item.name,
+      sector: item.sector || '',
+      currentPrice: String(item.currentPrice),
+      fairPrice: String(item.fairPrice),
+      targetPrice: String(item.targetPrice),
+      status: item.status || 'Interesse',
+    });
+    setModalOpen(true);
+  }
+
+  function handleSave() {
+    const parsed = {
+      ticker: form.ticker.toUpperCase().trim(),
+      name: form.name.trim(),
+      sector: form.sector.trim(),
+      currentPrice: Number(form.currentPrice) || 0,
+      fairPrice: Number(form.fairPrice) || 0,
+      targetPrice: Number(form.targetPrice) || 0,
+      status: form.status,
+    };
+    if (!parsed.ticker) return;
+    if (editing) {
+      setWatchlist((prev) => prev.map((w) => (w.ticker === editing.ticker ? parsed : w)));
+    } else {
+      setWatchlist((prev) => [...prev, parsed]);
+    }
+    setModalOpen(false);
+  }
+
+  function handleDelete() {
+    if (!editing) return;
+    setWatchlist((prev) => prev.filter((w) => w.ticker !== editing.ticker));
+    setModalOpen(false);
+  }
 
   // ---- Derived: assets that hit the target price ----------------------------
   const alerts = useMemo(
@@ -61,6 +117,12 @@ export default function WatchlistTab() {
       <div className="flex items-center gap-3">
         <Eye className="w-6 h-6 text-indigo-400" />
         <h2 className="text-xl font-semibold text-slate-100">Watchlist</h2>
+        <button
+          onClick={handleAdd}
+          className="ml-2 inline-flex items-center gap-1 rounded-lg bg-indigo-600/20 px-3 py-1.5 text-xs font-medium text-indigo-400 hover:bg-indigo-600/30 transition"
+        >
+          <Plus className="w-3.5 h-3.5" /> Adicionar
+        </button>
       </div>
 
       {/* ================================================================= */}
@@ -203,7 +265,8 @@ export default function WatchlistTab() {
                   return (
                     <tr
                       key={item.ticker}
-                      className={`border-b border-white/5 transition-colors ${
+                      onClick={() => handleEdit(item)}
+                      className={`border-b border-white/5 transition-colors cursor-pointer ${
                         idx % 2 === 0 ? 'bg-white/[0.02]' : ''
                       } ${
                         isOnSale
@@ -324,6 +387,44 @@ export default function WatchlistTab() {
           </span>
         </span>
       </div>
+
+      {/* ---- CRUD Modal ---- */}
+      <FormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Editar ${editing.ticker}` : 'Adicionar a Watchlist'}
+        onSave={handleSave}
+        onDelete={editing ? handleDelete : undefined}
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Ticker">
+            <FormInput value={form.ticker} onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))} placeholder="TAEE11" />
+          </FormField>
+          <FormField label="Status">
+            <FormSelect value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+              <option value="Interesse">Interesse</option>
+              <option value="Possui">Possui</option>
+            </FormSelect>
+          </FormField>
+        </div>
+        <FormField label="Nome">
+          <FormInput value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Taesa UNT" />
+        </FormField>
+        <FormField label="Setor">
+          <FormInput value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} placeholder="Energia Eletrica" />
+        </FormField>
+        <div className="grid grid-cols-3 gap-4">
+          <FormField label="Preco Atual">
+            <FormInput type="number" step="0.01" value={form.currentPrice} onChange={(e) => setForm((f) => ({ ...f, currentPrice: e.target.value }))} />
+          </FormField>
+          <FormField label="Preco Justo">
+            <FormInput type="number" step="0.01" value={form.fairPrice} onChange={(e) => setForm((f) => ({ ...f, fairPrice: e.target.value }))} />
+          </FormField>
+          <FormField label="Preco-Alvo">
+            <FormInput type="number" step="0.01" value={form.targetPrice} onChange={(e) => setForm((f) => ({ ...f, targetPrice: e.target.value }))} />
+          </FormField>
+        </div>
+      </FormModal>
     </div>
   );
 }

@@ -21,8 +21,9 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
-import { Globe, ArrowLeftRight } from 'lucide-react';
+import { Globe, ArrowLeftRight, Plus } from 'lucide-react';
 import { SECTOR_COLORS } from '../../data/mockData';
+import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,11 +67,78 @@ function PieTooltip({ active, payload }) {
 // Component
 // ---------------------------------------------------------------------------
 
+const EMPTY_INTL = {
+  ticker: '', name: '', sector: '', type: 'Stock', qty: '', avgPriceUsd: '',
+  currentPriceUsd: '', lpa: '', vpa: '', dividends5y: '', fairPriceManual: '', broker: '',
+};
+
 function IntlStocksTab() {
-  const { intlStocks, currency, exchangeRate, brokerFilter } = useApp();
+  const { intlStocks, setIntlStocks, currency, exchangeRate, brokerFilter } = useApp();
 
   // Local display-currency toggle (independent from global `currency`)
   const [displayCurrency, setDisplayCurrency] = useState('USD');
+
+  // ---- CRUD state ----
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(EMPTY_INTL);
+
+  function handleAdd() {
+    setEditing(null);
+    setForm(EMPTY_INTL);
+    setModalOpen(true);
+  }
+
+  function handleEdit(stock) {
+    setEditing(stock);
+    setForm({
+      ticker: stock.ticker,
+      name: stock.name,
+      sector: stock.sector,
+      type: stock.type || 'Stock',
+      qty: String(stock.qty),
+      avgPriceUsd: String(stock.avgPriceUsd),
+      currentPriceUsd: String(stock.currentPriceUsd),
+      lpa: stock.lpa != null ? String(stock.lpa) : '',
+      vpa: stock.vpa != null ? String(stock.vpa) : '',
+      dividends5y: Array.isArray(stock.dividends5y) ? stock.dividends5y.join(', ') : '',
+      fairPriceManual: stock.fairPriceManual ? String(stock.fairPriceManual) : '',
+      broker: stock.broker || '',
+    });
+    setModalOpen(true);
+  }
+
+  function handleSave() {
+    const parsed = {
+      ticker: form.ticker.toUpperCase().trim(),
+      name: form.name.trim(),
+      sector: form.sector.trim(),
+      type: form.type,
+      qty: Number(form.qty) || 0,
+      avgPriceUsd: Number(form.avgPriceUsd) || 0,
+      currentPriceUsd: Number(form.currentPriceUsd) || 0,
+      lpa: form.lpa !== '' ? Number(form.lpa) : null,
+      vpa: form.vpa !== '' ? Number(form.vpa) : null,
+      dividends5y: form.dividends5y
+        ? form.dividends5y.split(',').map((v) => Number(v.trim())).filter((v) => !isNaN(v))
+        : [],
+      fairPriceManual: form.fairPriceManual ? Number(form.fairPriceManual) : null,
+      broker: form.broker.trim(),
+    };
+    if (!parsed.ticker) return;
+    if (editing) {
+      setIntlStocks((prev) => prev.map((s) => (s.ticker === editing.ticker ? parsed : s)));
+    } else {
+      setIntlStocks((prev) => [...prev, parsed]);
+    }
+    setModalOpen(false);
+  }
+
+  function handleDelete() {
+    if (!editing) return;
+    setIntlStocks((prev) => prev.filter((s) => s.ticker !== editing.ticker));
+    setModalOpen(false);
+  }
 
   const rate = exchangeRate; // alias for readability
 
@@ -175,6 +243,12 @@ function IntlStocksTab() {
           <h2 className="text-lg font-semibold text-slate-100">
             Renda Variavel Exterior
           </h2>
+          <button
+            onClick={handleAdd}
+            className="ml-2 inline-flex items-center gap-1 rounded-lg bg-indigo-600/20 px-3 py-1.5 text-xs font-medium text-indigo-400 hover:bg-indigo-600/30 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Adicionar Ativo
+          </button>
         </div>
 
         {/* Segmented toggle */}
@@ -235,7 +309,8 @@ function IntlStocksTab() {
               {rows.map((r) => (
                 <tr
                   key={r.ticker}
-                  className="transition-colors hover:bg-slate-700/20"
+                  onClick={() => handleEdit(r)}
+                  className="transition-colors hover:bg-slate-700/20 cursor-pointer"
                 >
                   {/* Ticker */}
                   <td className="whitespace-nowrap px-3 py-2.5 text-left font-bold text-slate-100">
@@ -481,6 +556,63 @@ function IntlStocksTab() {
           </div>
         </div>
       </div>
+      {/* ---- CRUD Modal ---- */}
+      <FormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Editar ${editing.ticker}` : 'Adicionar Ativo Internacional'}
+        onSave={handleSave}
+        onDelete={editing ? handleDelete : undefined}
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Ticker">
+            <FormInput value={form.ticker} onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))} placeholder="AAPL" />
+          </FormField>
+          <FormField label="Tipo">
+            <FormSelect value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+              <option value="Stock">Stock</option>
+              <option value="ETF">ETF</option>
+              <option value="REIT">REIT</option>
+            </FormSelect>
+          </FormField>
+        </div>
+        <FormField label="Nome">
+          <FormInput value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Apple Inc." />
+        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Setor">
+            <FormInput value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} placeholder="Technology" />
+          </FormField>
+          <FormField label="Corretora">
+            <FormInput value={form.broker} onChange={(e) => setForm((f) => ({ ...f, broker: e.target.value }))} placeholder="Avenue" />
+          </FormField>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <FormField label="Qtd">
+            <FormInput type="number" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} />
+          </FormField>
+          <FormField label="PM (USD)">
+            <FormInput type="number" step="0.01" value={form.avgPriceUsd} onChange={(e) => setForm((f) => ({ ...f, avgPriceUsd: e.target.value }))} />
+          </FormField>
+          <FormField label="Preco Atual (USD)">
+            <FormInput type="number" step="0.01" value={form.currentPriceUsd} onChange={(e) => setForm((f) => ({ ...f, currentPriceUsd: e.target.value }))} />
+          </FormField>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="LPA">
+            <FormInput type="number" step="0.01" value={form.lpa} onChange={(e) => setForm((f) => ({ ...f, lpa: e.target.value }))} />
+          </FormField>
+          <FormField label="VPA">
+            <FormInput type="number" step="0.01" value={form.vpa} onChange={(e) => setForm((f) => ({ ...f, vpa: e.target.value }))} />
+          </FormField>
+        </div>
+        <FormField label="Dividendos 5a (separados por virgula)">
+          <FormInput value={form.dividends5y} onChange={(e) => setForm((f) => ({ ...f, dividends5y: e.target.value }))} placeholder="0.82, 0.88, 0.92, 0.96, 1.00" />
+        </FormField>
+        <FormField label="Preco Justo Manual (USD)">
+          <FormInput type="number" step="0.01" value={form.fairPriceManual} onChange={(e) => setForm((f) => ({ ...f, fairPriceManual: e.target.value }))} />
+        </FormField>
+      </FormModal>
     </div>
   );
 }
