@@ -3,7 +3,7 @@ import { useApp } from './context/AppContext';
 import {
   LayoutDashboard, Target, TrendingUp, Globe, Shield,
   Home, DollarSign, Eye, Calculator, BarChart3,
-  BellRing, ArrowLeftRight, RotateCcw, Menu, X,
+  BellRing, ArrowLeftRight, RotateCcw, Menu, X, Sprout,
 } from 'lucide-react';
 
 // Tabs
@@ -17,6 +17,7 @@ import DividendsTab from './components/tabs/DividendsTab';
 import WatchlistTab from './components/tabs/WatchlistTab';
 import SimulatorTab from './components/tabs/SimulatorTab';
 import PerformanceTab from './components/tabs/PerformanceTab';
+import AccumulationTab from './components/tabs/AccumulationTab';
 
 const TABS = [
   { id: 'dashboard', label: 'Visao Geral', icon: LayoutDashboard },
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'fixed-income', label: 'Renda Fixa', icon: Shield },
   { id: 'real-assets', label: 'Imobilizados', icon: Home },
   { id: 'dividends', label: 'Proventos', icon: DollarSign },
+  { id: 'accumulation', label: 'Acumulacao', icon: Sprout },
   { id: 'watchlist', label: 'Watchlist', icon: Eye },
   { id: 'simulator', label: 'Simulador', icon: Calculator },
   { id: 'performance', label: 'Rentabilidade', icon: BarChart3 },
@@ -39,6 +41,7 @@ const TAB_COMPONENTS = {
   'fixed-income': FixedIncomeTab,
   'real-assets': RealAssetsTab,
   'dividends': DividendsTab,
+  'accumulation': AccumulationTab,
   'watchlist': WatchlistTab,
   'simulator': SimulatorTab,
   'performance': PerformanceTab,

@@ -291,6 +291,33 @@ export const benchmarks = {
 };
 
 // --------------------------------------------------------
+// Histórico de Acumulação de Cotas (últimos 6 meses)
+// --------------------------------------------------------
+export const accumulationHistory = [
+  { month: 'Ago/25', totalShares: 1650, brShares: 1340, fiiShares: 310 },
+  { month: 'Set/25', totalShares: 1700, brShares: 1380, fiiShares: 320 },
+  { month: 'Out/25', totalShares: 1750, brShares: 1410, fiiShares: 340 },
+  { month: 'Nov/25', totalShares: 1810, brShares: 1460, fiiShares: 350 },
+  { month: 'Dez/25', totalShares: 1860, brShares: 1500, fiiShares: 360 },
+  { month: 'Jan/26', totalShares: 1900, brShares: 1540, fiiShares: 360 },
+];
+
+// --------------------------------------------------------
+// Metas de Acumulação (Filosofia Barsi)
+// --------------------------------------------------------
+export const accumulationGoals = [
+  { id: 'goal-1', ticker: 'ITUB4', targetQty: 500, note: 'Acumular banco perene' },
+  { id: 'goal-2', ticker: 'BBAS3', targetQty: 400, note: 'Pilar de dividendos bancarios' },
+  { id: 'goal-3', ticker: 'HGLG11', targetQty: 100, note: 'Renda passiva com logistica' },
+  { id: 'goal-4', ticker: 'PETR4', targetQty: 300, note: 'Dividendos extraordinarios' },
+];
+
+// --------------------------------------------------------
+// Setores Perenes (Filosofia Barsi)
+// --------------------------------------------------------
+export const PERENNIAL_SECTORS = ['Bancos', 'Energia Eletrica', 'Saneamento', 'Seguros'];
+
+// --------------------------------------------------------
 // Cores para gráficos
 // --------------------------------------------------------
 export const CHART_COLORS = [

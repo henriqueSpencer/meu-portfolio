@@ -8,6 +8,8 @@ import {
   dividendHistory as defaultDividends,
   watchlistData as defaultWatchlist,
   allocationTargets as defaultTargets,
+  accumulationGoals as defaultAccumulationGoals,
+  accumulationHistory,
   patrimonialHistory,
   benchmarks,
   EXCHANGE_RATE,
@@ -41,13 +43,14 @@ export function AppProvider({ children }) {
   const [dividends, setDividends] = useState(stored?.dividends || defaultDividends);
   const [watchlist, setWatchlist] = useState(stored?.watchlist || defaultWatchlist);
   const [targets, setTargets] = useState(stored?.targets || defaultTargets);
+  const [accumulationGoals, setAccumulationGoals] = useState(stored?.accumulationGoals || defaultAccumulationGoals);
   const exchangeRate = EXCHANGE_RATE;
 
   // Persistência no localStorage
   useEffect(() => {
-    const data = { brStocks, fiis, intlStocks, fixedIncome, realAssets, dividends, watchlist, targets };
+    const data = { brStocks, fiis, intlStocks, fixedIncome, realAssets, dividends, watchlist, targets, accumulationGoals };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [brStocks, fiis, intlStocks, fixedIncome, realAssets, dividends, watchlist, targets]);
+  }, [brStocks, fiis, intlStocks, fixedIncome, realAssets, dividends, watchlist, targets, accumulationGoals]);
 
   // Cálculos derivados
   const allocation = useMemo(
@@ -101,6 +104,7 @@ export function AppProvider({ children }) {
     setDividends(defaultDividends);
     setWatchlist(defaultWatchlist);
     setTargets(defaultTargets);
+    setAccumulationGoals(defaultAccumulationGoals);
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -115,6 +119,8 @@ export function AppProvider({ children }) {
     dividends, setDividends,
     watchlist, setWatchlist,
     targets, setTargets,
+    accumulationGoals, setAccumulationGoals,
+    accumulationHistory,
     exchangeRate,
     allocation,
     totalPatrimony,
