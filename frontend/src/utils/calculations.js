@@ -56,15 +56,17 @@ export function yieldOnCost(annualDividendPerShare, avgPrice) {
 /**
  * Calcula a alocação atual por classe de ativo
  */
-export function calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exchangeRate) {
+export function calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exchangeRate, fiEtfs = [], cashAccounts = []) {
   const rvBrasil = brStocks.reduce((sum, s) => sum + s.qty * s.currentPrice, 0);
   const fiisTotal = fiis.reduce((sum, f) => sum + f.qty * f.currentPrice, 0);
   const rvExterior = intlStocks.reduce((sum, s) => sum + s.qty * s.currentPriceUsd * exchangeRate, 0);
-  const rfTotal = fixedIncome.reduce((sum, f) => sum + f.currentValue, 0);
+  const rfBonds = fixedIncome.reduce((sum, f) => sum + f.currentValue, 0);
+  const rfEtfs = fiEtfs.reduce((sum, e) => sum + e.qty * e.currentPrice, 0);
+  const rfTotal = rfBonds + rfEtfs;
   const cripto = 0; // Placeholder
-  const reserva = 0; // Placeholder
+  const caixa = cashAccounts.reduce((sum, a) => sum + (a.balance || 0), 0);
 
-  const total = rvBrasil + fiisTotal + rvExterior + rfTotal + cripto + reserva;
+  const total = rvBrasil + fiisTotal + rvExterior + rfTotal + cripto + caixa;
 
   return {
     total,
@@ -74,7 +76,7 @@ export function calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exc
       { class: 'RV Exterior', value: rvExterior, pct: total ? (rvExterior / total * 100) : 0 },
       { class: 'Renda Fixa', value: rfTotal, pct: total ? (rfTotal / total * 100) : 0 },
       { class: 'Cripto', value: cripto, pct: total ? (cripto / total * 100) : 0 },
-      { class: 'Reserva Emergência', value: reserva, pct: total ? (reserva / total * 100) : 0 },
+      { class: 'Caixa', value: caixa, pct: total ? (caixa / total * 100) : 0 },
     ],
   };
 }

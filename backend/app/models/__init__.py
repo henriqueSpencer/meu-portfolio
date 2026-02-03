@@ -9,6 +9,9 @@ from .watchlist import WatchlistItem
 from .allocation_target import AllocationTarget
 from .accumulation_goal import AccumulationGoal
 from .patrimonial_history import PatrimonialHistory
+from .transaction import Transaction
+from .fi_etf import FiEtf
+from .cash_account import CashAccount
 
 __all__ = [
     "Base",
@@ -22,4 +25,7 @@ __all__ = [
     "AllocationTarget",
     "AccumulationGoal",
     "PatrimonialHistory",
+    "Transaction",
+    "FiEtf",
+    "CashAccount",
 ]

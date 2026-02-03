@@ -6,12 +6,13 @@ from ..database import get_db
 from ..models import (
     BrStock, Fii, IntlStock, FixedIncome, RealAsset,
     Dividend, WatchlistItem, AllocationTarget, AccumulationGoal,
-    PatrimonialHistory,
+    PatrimonialHistory, FiEtf, CashAccount,
 )
 from ..seed.seed_data import (
     BR_STOCKS, FIIS, INTL_STOCKS, FIXED_INCOME, REAL_ASSETS,
     DIVIDENDS, WATCHLIST, ALLOCATION_TARGETS, ACCUMULATION_GOALS,
     PATRIMONIAL_HISTORY, BENCHMARKS, ACCUMULATION_HISTORY,
+    FI_ETFS, CASH_ACCOUNTS,
 )
 
 router = APIRouter(prefix="/api/seed", tags=["seed"])
@@ -41,6 +42,10 @@ async def run_seed(db: AsyncSession):
         db.add(AllocationTarget(**row))
     for row in ACCUMULATION_GOALS:
         db.add(AccumulationGoal(**row))
+    for row in FI_ETFS:
+        db.add(FiEtf(**row))
+    for row in CASH_ACCOUNTS:
+        db.add(CashAccount(**row))
     for row in PATRIMONIAL_HISTORY:
         db.add(PatrimonialHistory(**row))
     await db.commit()
@@ -49,14 +54,16 @@ async def run_seed(db: AsyncSession):
 @router.post("/reset")
 async def reset_seed(db: AsyncSession = Depends(get_db)):
     tables = [
+        "transactions",
         "patrimonial_history", "accumulation_goals", "allocation_targets",
         "watchlist", "dividends", "real_assets", "fixed_income",
+        "fi_etfs", "cash_accounts",
         "intl_stocks", "fiis", "br_stocks",
     ]
     for table in tables:
         await db.execute(text(f"DELETE FROM {table}"))
     # Reset sequences for auto-increment tables
-    for seq in ["dividends_id_seq", "allocation_targets_id_seq", "patrimonial_history_id_seq"]:
+    for seq in ["transactions_id_seq", "dividends_id_seq", "allocation_targets_id_seq", "patrimonial_history_id_seq"]:
         await db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
     await db.commit()
     await run_seed(db)

@@ -13,6 +13,9 @@ import {
   watchlistApi,
   allocationTargetsApi,
   accumulationGoalsApi,
+  fiEtfsApi,
+  cashAccountsApi,
+  transactionsApi,
   patrimonialHistoryApi,
   fetchStaticData,
   resetSeed,
@@ -87,6 +90,49 @@ export function useAllocationTargets() {
 
 export function useAccumulationGoals() {
   return useCrud('accumulation-goals', accumulationGoalsApi);
+}
+
+export function useFiEtfs() {
+  return useCrud('fi-etfs', fiEtfsApi);
+}
+
+export function useCashAccounts() {
+  return useCrud('cash-accounts', cashAccountsApi);
+}
+
+// ---------------------------------------------------------------------------
+// Transactions hook (custom — invalidates all asset queries on mutate)
+// ---------------------------------------------------------------------------
+
+const ASSET_KEYS = ['br-stocks', 'fiis', 'intl-stocks', 'fixed-income', 'real-assets', 'fi-etfs', 'cash-accounts'];
+
+export function useTransactions() {
+  const qc = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['transactions'],
+    queryFn: transactionsApi.list,
+    staleTime: 60_000,
+  });
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['transactions'] });
+    for (const key of ASSET_KEYS) {
+      qc.invalidateQueries({ queryKey: [key] });
+    }
+  };
+
+  const create = useMutation({
+    mutationFn: (data) => transactionsApi.create(data),
+    onSuccess: invalidateAll,
+  });
+
+  const remove = useMutation({
+    mutationFn: (id) => transactionsApi.remove(id),
+    onSuccess: invalidateAll,
+  });
+
+  return { query, create, remove };
 }
 
 // ---------------------------------------------------------------------------

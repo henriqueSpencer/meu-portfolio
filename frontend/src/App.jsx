@@ -19,6 +19,7 @@ import WatchlistTab from './components/tabs/WatchlistTab';
 import SimulatorTab from './components/tabs/SimulatorTab';
 import PerformanceTab from './components/tabs/PerformanceTab';
 import AccumulationTab from './components/tabs/AccumulationTab';
+import TransactionsTab from './components/tabs/TransactionsTab';
 
 const TABS = [
   { id: 'dashboard', label: 'Visao Geral', icon: LayoutDashboard },
@@ -28,6 +29,7 @@ const TABS = [
   { id: 'fixed-income', label: 'Renda Fixa', icon: Shield },
   { id: 'real-assets', label: 'Imobilizados', icon: Home },
   { id: 'dividends', label: 'Proventos', icon: DollarSign },
+  { id: 'transactions', label: 'Lancamentos', icon: ArrowLeftRight },
   { id: 'accumulation', label: 'Acumulacao', icon: Sprout },
   { id: 'watchlist', label: 'Watchlist', icon: Eye },
   { id: 'simulator', label: 'Simulador', icon: Calculator },
@@ -42,6 +44,7 @@ const TAB_COMPONENTS = {
   'fixed-income': FixedIncomeTab,
   'real-assets': RealAssetsTab,
   'dividends': DividendsTab,
+  'transactions': TransactionsTab,
   'accumulation': AccumulationTab,
   'watchlist': WatchlistTab,
   'simulator': SimulatorTab,

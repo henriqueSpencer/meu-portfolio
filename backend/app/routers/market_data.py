@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from ..services.yahoo import fetch_quotes
-from ..services.bcb import fetch_exchange_rate, fetch_selic, fetch_cdi, fetch_ipca
+from ..services.bcb import fetch_exchange_rate, fetch_selic, fetch_cdi, fetch_ipca, fetch_historical_series
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 
@@ -51,3 +51,24 @@ async def get_indicators():
     if errors:
         result["errors"] = errors
     return result
+
+
+@router.get("/historical-rates")
+async def get_historical_rates(
+    series: str = Query(..., description="Comma-separated BCB series codes (e.g. 12,433,11)"),
+    start: str = Query(..., description="Start date DD/MM/YYYY"),
+    end: str = Query(..., description="End date DD/MM/YYYY"),
+):
+    codes = []
+    for s in series.split(","):
+        s = s.strip()
+        if not s.isdigit():
+            raise HTTPException(400, f"Invalid series code: {s}")
+        codes.append(int(s))
+    if not codes:
+        raise HTTPException(400, "No series codes provided")
+    try:
+        data = await fetch_historical_series(codes, start, end)
+        return {str(k): v for k, v in data.items()}
+    except Exception as e:
+        raise HTTPException(502, f"Failed to fetch historical rates: {e}")

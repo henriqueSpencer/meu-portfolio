@@ -17,6 +17,9 @@ from .routers import (
     accumulation_goals,
     market_data,
     patrimonial_history,
+    transactions,
+    fi_etfs,
+    cash_accounts,
     seed,
 )
 from .routers.seed import _is_empty, run_seed
@@ -57,6 +60,9 @@ app.include_router(allocation_targets.router)
 app.include_router(accumulation_goals.router)
 app.include_router(market_data.router)
 app.include_router(patrimonial_history.router)
+app.include_router(transactions.router)
+app.include_router(fi_etfs.router)
+app.include_router(cash_accounts.router)
 app.include_router(seed.router)
 
 

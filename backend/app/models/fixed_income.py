@@ -1,4 +1,4 @@
-from sqlalchemy import String, Float, Date
+from sqlalchemy import String, Float, Date, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 import datetime
 
@@ -17,3 +17,6 @@ class FixedIncome(Base):
     application_date: Mapped[datetime.date] = mapped_column(Date)
     maturity_date: Mapped[datetime.date] = mapped_column(Date)
     broker: Mapped[str] = mapped_column(String(30), default="")
+    indexer: Mapped[str] = mapped_column(String(20), default="CDI")
+    contracted_rate: Mapped[float] = mapped_column(Float, default=0)
+    tax_exempt: Mapped[bool] = mapped_column(Boolean, default=False)

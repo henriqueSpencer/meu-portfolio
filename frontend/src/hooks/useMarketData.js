@@ -3,7 +3,7 @@
 // ========================================================
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchBrQuotes, fetchExchangeRate } from '../services/api';
+import { fetchBrQuotes, fetchExchangeRate, fetchHistoricalRates } from '../services/api';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,6 +49,22 @@ export function useExchangeRate() {
     gcTime: 2 * 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
+    retry: 2,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// BCB Historical Series (CDI daily=12, IPCA monthly=433, Selic daily=11)
+// ---------------------------------------------------------------------------
+
+export function useHistoricalRates(seriesCodes, startDate, endDate) {
+  return useQuery({
+    queryKey: ['historical-rates', seriesCodes, startDate, endDate],
+    queryFn: () => fetchHistoricalRates(seriesCodes, startDate, endDate),
+    staleTime: 6 * 60 * 60 * 1000,
+    gcTime: 12 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: !!(seriesCodes?.length && startDate && endDate),
     retry: 2,
   });
 }

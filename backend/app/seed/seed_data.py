@@ -26,9 +26,9 @@ INTL_STOCKS = [
 ]
 
 FIXED_INCOME = [
-    {"id": "rf1", "title": "Tesouro IPCA+ 2029", "type": "Tesouro Direto", "rate": "IPCA + 6.20%", "applied_value": 50000, "current_value": 58200, "application_date": datetime.date(2023, 3, 15), "maturity_date": datetime.date(2029, 5, 15), "broker": "BTG"},
-    {"id": "rf2", "title": "CDB Banco Inter 120% CDI", "type": "CDB", "rate": "120% CDI", "applied_value": 30000, "current_value": 34800, "application_date": datetime.date(2023, 8, 10), "maturity_date": datetime.date(2026, 8, 10), "broker": "BTG"},
-    {"id": "rf3", "title": "LCI Itau 95% CDI", "type": "LCI", "rate": "95% CDI", "applied_value": 20000, "current_value": 22100, "application_date": datetime.date(2024, 1, 20), "maturity_date": datetime.date(2027, 1, 20), "broker": "BTG"},
+    {"id": "rf1", "title": "Tesouro IPCA+ 2029", "type": "Tesouro Direto", "rate": "IPCA + 6.20%", "applied_value": 50000, "current_value": 58200, "application_date": datetime.date(2023, 3, 15), "maturity_date": datetime.date(2029, 5, 15), "broker": "BTG", "indexer": "IPCA", "contracted_rate": 6.20, "tax_exempt": False},
+    {"id": "rf2", "title": "CDB Banco Inter 120% CDI", "type": "CDB", "rate": "120% CDI", "applied_value": 30000, "current_value": 34800, "application_date": datetime.date(2023, 8, 10), "maturity_date": datetime.date(2026, 8, 10), "broker": "BTG", "indexer": "CDI", "contracted_rate": 120, "tax_exempt": False},
+    {"id": "rf3", "title": "LCI Itau 95% CDI", "type": "LCI", "rate": "95% CDI", "applied_value": 20000, "current_value": 22100, "application_date": datetime.date(2024, 1, 20), "maturity_date": datetime.date(2027, 1, 20), "broker": "BTG", "indexer": "CDI", "contracted_rate": 95, "tax_exempt": True},
 ]
 
 REAL_ASSETS = [
@@ -102,7 +102,18 @@ ALLOCATION_TARGETS = [
     {"asset_class": "RV Exterior", "target": 20, "icon": "Globe"},
     {"asset_class": "Renda Fixa", "target": 25, "icon": "Shield"},
     {"asset_class": "Cripto", "target": 5, "icon": "Bitcoin"},
-    {"asset_class": "Reserva Emergencia", "target": 5, "icon": "Wallet"},
+    {"asset_class": "Caixa", "target": 5, "icon": "Wallet"},
+]
+
+FI_ETFS = [
+    {"ticker": "IMAB11", "name": "It Now ID ETF IMA-B", "qty": 50, "avg_price": 78.50, "current_price": 82.30, "broker": "BTG"},
+    {"ticker": "B5P211", "name": "It Now IMA-B5 P2 ETF", "qty": 30, "avg_price": 102.00, "current_price": 108.50, "broker": "BTG"},
+]
+
+CASH_ACCOUNTS = [
+    {"id": "cash1", "name": "Conta Corrente BTG", "type": "conta_corrente", "institution": "BTG Pactual", "balance": 8500.00, "currency": "BRL"},
+    {"id": "cash2", "name": "Poupanca Itau", "type": "poupanca", "institution": "Itau", "balance": 15000.00, "currency": "BRL"},
+    {"id": "cash3", "name": "Cartao Nubank", "type": "cartao_credito", "institution": "Nubank", "balance": -2300.00, "currency": "BRL"},
 ]
 
 ACCUMULATION_GOALS = [

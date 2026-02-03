@@ -57,6 +57,9 @@ export function toSnakeCase(obj, type) {
         application_date: obj.applicationDate ?? obj.application_date,
         maturity_date: obj.maturityDate ?? obj.maturity_date,
         broker: obj.broker || '',
+        indexer: obj.indexer || 'CDI',
+        contracted_rate: obj.contractedRate ?? obj.contracted_rate ?? 0,
+        tax_exempt: obj.taxExempt ?? obj.tax_exempt ?? false,
       };
     case 'realAsset':
       return {
@@ -83,6 +86,40 @@ export function toSnakeCase(obj, type) {
         ticker: obj.ticker,
         target_qty: obj.targetQty ?? obj.target_qty ?? 0,
         note: obj.note || '',
+      };
+    case 'transaction':
+      return {
+        date: obj.date,
+        operation_type: obj.operationType ?? obj.operation_type,
+        asset_class: obj.assetClass ?? obj.asset_class,
+        ticker: obj.ticker || null,
+        asset_id: obj.assetId ?? obj.asset_id ?? null,
+        asset_name: obj.assetName ?? obj.asset_name,
+        qty: obj.qty ?? null,
+        unit_price: obj.unitPrice ?? obj.unit_price ?? null,
+        total_value: obj.totalValue ?? obj.total_value ?? null,
+        broker: obj.broker || '',
+        broker_destination: obj.brokerDestination ?? obj.broker_destination ?? null,
+        fees: obj.fees ?? 0,
+        notes: obj.notes || null,
+      };
+    case 'fiEtf':
+      return {
+        ticker: obj.ticker,
+        name: obj.name,
+        qty: obj.qty,
+        avg_price: obj.avgPrice ?? obj.avg_price ?? 0,
+        current_price: obj.currentPrice ?? obj.current_price ?? 0,
+        broker: obj.broker || '',
+      };
+    case 'cashAccount':
+      return {
+        id: obj.id,
+        name: obj.name,
+        type: obj.type,
+        institution: obj.institution || '',
+        balance: obj.balance ?? 0,
+        currency: obj.currency || 'BRL',
       };
     default:
       return obj;

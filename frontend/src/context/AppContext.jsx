@@ -12,6 +12,9 @@ import {
   useWatchlist,
   useAllocationTargets,
   useAccumulationGoals,
+  useFiEtfs,
+  useCashAccounts,
+  useTransactions,
   usePatrimonialHistory,
   useStaticData,
   useResetData,
@@ -39,6 +42,9 @@ export function AppProvider({ children }) {
   const watchlistCrud = useWatchlist();
   const targetsCrud = useAllocationTargets();
   const accGoalsCrud = useAccumulationGoals();
+  const fiEtfsCrud = useFiEtfs();
+  const cashAccountsCrud = useCashAccounts();
+  const transactionsCrud = useTransactions();
   const patrimonialHistoryQuery = usePatrimonialHistory();
   const staticDataQuery = useStaticData();
   const resetMutation = useResetData();
@@ -53,6 +59,9 @@ export function AppProvider({ children }) {
   const watchlist = watchlistCrud.query.data ?? EMPTY;
   const targets = targetsCrud.query.data ?? EMPTY;
   const accumulationGoals = accGoalsCrud.query.data ?? EMPTY;
+  const fiEtfs = fiEtfsCrud.query.data ?? EMPTY;
+  const cashAccounts = cashAccountsCrud.query.data ?? EMPTY;
+  const transactions = transactionsCrud.query.data ?? EMPTY;
   const patrimonialHistory = patrimonialHistoryQuery.data ?? EMPTY;
   const staticData = staticDataQuery.data ?? EMPTY_OBJ;
 
@@ -65,7 +74,8 @@ export function AppProvider({ children }) {
   const brTickers = useMemo(() => [
     ...brStocks.map(s => s.ticker),
     ...fiis.map(f => f.ticker),
-  ], [brStocks, fiis]);
+    ...fiEtfs.map(e => e.ticker),
+  ], [brStocks, fiis, fiEtfs]);
 
   const quotesQuery = useBrQuotes(brTickers);
   const exchangeRateQuery = useExchangeRate();
@@ -100,6 +110,14 @@ export function AppProvider({ children }) {
     });
   }, [fiis, livePriceMap]);
 
+  const liveFiEtfs = useMemo(() => {
+    if (Object.keys(livePriceMap).length === 0) return fiEtfs;
+    return fiEtfs.map(e => {
+      const live = livePriceMap[e.ticker];
+      return live != null && live !== e.currentPrice ? { ...e, currentPrice: live } : e;
+    });
+  }, [fiEtfs, livePriceMap]);
+
   const marketDataStatus = useMemo(() => ({
     quotesUpdatedAt: quotesQuery.dataUpdatedAt || null,
     quotesIsLoading: quotesQuery.isLoading,
@@ -119,8 +137,8 @@ export function AppProvider({ children }) {
   // Derived values
   // ---------------------------------------------------------------------------
   const allocation = useMemo(
-    () => calculateAllocation(liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate),
-    [liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate]
+    () => calculateAllocation(liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate, liveFiEtfs, cashAccounts),
+    [liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate, liveFiEtfs, cashAccounts]
   );
 
   const totalPatrimony = useMemo(() => {
@@ -322,6 +340,44 @@ export function AppProvider({ children }) {
     }
   }, [accumulationGoals, accGoalsCrud]);
 
+  const setFiEtfs = useCallback((updater) => {
+    const prev = fiEtfs;
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    const prevTickers = new Set(prev.map(e => e.ticker));
+    const nextTickers = new Set(next.map(e => e.ticker));
+    for (const item of next.filter(e => !prevTickers.has(e.ticker))) {
+      fiEtfsCrud.create.mutate(toSnakeCase(item, 'fiEtf'));
+    }
+    for (const item of prev.filter(e => !nextTickers.has(e.ticker))) {
+      fiEtfsCrud.remove.mutate(item.ticker);
+    }
+    for (const item of next.filter(e => prevTickers.has(e.ticker))) {
+      const old = prev.find(e => e.ticker === item.ticker);
+      if (JSON.stringify(old) !== JSON.stringify(item)) {
+        fiEtfsCrud.update.mutate({ id: item.ticker, data: toSnakeCase(item, 'fiEtf') });
+      }
+    }
+  }, [fiEtfs, fiEtfsCrud]);
+
+  const setCashAccounts = useCallback((updater) => {
+    const prev = cashAccounts;
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    const prevIds = new Set(prev.map(a => a.id));
+    const nextIds = new Set(next.map(a => a.id));
+    for (const item of next.filter(a => !prevIds.has(a.id))) {
+      cashAccountsCrud.create.mutate(toSnakeCase(item, 'cashAccount'));
+    }
+    for (const item of prev.filter(a => !nextIds.has(a.id))) {
+      cashAccountsCrud.remove.mutate(item.id);
+    }
+    for (const item of next.filter(a => prevIds.has(a.id))) {
+      const old = prev.find(a => a.id === item.id);
+      if (JSON.stringify(old) !== JSON.stringify(item)) {
+        cashAccountsCrud.update.mutate({ id: item.id, data: toSnakeCase(item, 'cashAccount') });
+      }
+    }
+  }, [cashAccounts, cashAccountsCrud]);
+
   const resetData = useCallback(() => {
     resetMutation.mutate();
   }, [resetMutation]);
@@ -336,11 +392,14 @@ export function AppProvider({ children }) {
     fiis: liveFiis, setFiis,
     intlStocks, setIntlStocks,
     fixedIncome, setFixedIncome,
+    fiEtfs: liveFiEtfs, setFiEtfs,
+    cashAccounts, setCashAccounts,
     realAssets, setRealAssets,
     dividends, setDividends,
     watchlist, setWatchlist,
     targets, setTargets,
     accumulationGoals, setAccumulationGoals,
+    transactions, transactionsCrud,
     accumulationHistory,
     exchangeRate,
     allocation,

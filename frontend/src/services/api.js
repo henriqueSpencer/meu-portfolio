@@ -63,6 +63,9 @@ export const dividendsApi = crudFor('dividends');
 export const watchlistApi = crudFor('watchlist');
 export const allocationTargetsApi = crudFor('allocation-targets');
 export const accumulationGoalsApi = crudFor('accumulation-goals');
+export const fiEtfsApi = crudFor('fi-etfs');
+export const cashAccountsApi = crudFor('cash-accounts');
+export const transactionsApi = crudFor('transactions');
 export const patrimonialHistoryApi = { list: () => request('/patrimonial-history') };
 
 // ---------------------------------------------------------------------------
@@ -82,6 +85,14 @@ export async function fetchExchangeRate() {
 
 export async function fetchIndicators() {
   return request('/market-data/indicators', { raw: true });
+}
+
+export async function fetchHistoricalRates(seriesCodes, startDate, endDate) {
+  const series = seriesCodes.join(',');
+  return request(
+    `/market-data/historical-rates?series=${series}&start=${startDate}&end=${endDate}`,
+    { raw: true }
+  );
 }
 
 // ---------------------------------------------------------------------------

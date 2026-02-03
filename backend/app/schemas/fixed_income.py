@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal
 import datetime
 
 
@@ -11,6 +12,9 @@ class FixedIncomeBase(BaseModel):
     application_date: datetime.date
     maturity_date: datetime.date
     broker: str = ""
+    indexer: Literal["CDI", "IPCA", "Selic", "Prefixado"] = "CDI"
+    contracted_rate: float = 0
+    tax_exempt: bool = False
 
 
 class FixedIncomeCreate(FixedIncomeBase):
