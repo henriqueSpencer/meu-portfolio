@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from './context/AppContext';
 import {
   LayoutDashboard, Target, TrendingUp, Globe, Shield,
   Home, DollarSign, Eye, Calculator, BarChart3,
   BellRing, ArrowLeftRight, RotateCcw, Menu, X, Sprout,
+  Wifi, WifiOff, Loader2,
 } from 'lucide-react';
 
 // Tabs
@@ -47,6 +48,60 @@ const TAB_COMPONENTS = {
   'performance': PerformanceTab,
 };
 
+function MarketStatusBadge() {
+  const { marketDataStatus } = useApp();
+  const { quotesEnabled, quotesIsLoading, quotesIsError, quotesUpdatedAt } = marketDataStatus;
+
+  // Track "minutes ago" via state + interval to avoid impure Date.now() in render
+  const [minutesAgo, setMinutesAgo] = useState(0);
+  useEffect(() => {
+    if (!quotesUpdatedAt) return;
+    const update = () => setMinutesAgo(Math.round((Date.now() - quotesUpdatedAt) / 60000));
+    update();
+    const id = setInterval(update, 60000);
+    return () => clearInterval(id);
+  }, [quotesUpdatedAt]);
+
+  if (!quotesEnabled) {
+    return (
+      <div className="hidden items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-500 sm:flex" title="Configure VITE_BRAPI_TOKEN no .env para dados ao vivo">
+        <WifiOff className="h-3 w-3" />
+        <span>Mock</span>
+      </div>
+    );
+  }
+
+  if (quotesIsLoading) {
+    return (
+      <div className="hidden items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-indigo-400 sm:flex">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Atualizando</span>
+      </div>
+    );
+  }
+
+  if (quotesIsError) {
+    return (
+      <div className="hidden items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-400 sm:flex" title="Erro ao buscar cotacoes. Usando dados em cache.">
+        <WifiOff className="h-3 w-3" />
+        <span>Offline</span>
+      </div>
+    );
+  }
+
+  if (quotesUpdatedAt) {
+    const label = minutesAgo < 1 ? 'Agora' : `${minutesAgo} min`;
+    return (
+      <div className="hidden items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-400 sm:flex" title={`Cotacoes atualizadas ha ${label}`}>
+        <Wifi className="h-3 w-3" />
+        <span>{label}</span>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function App() {
   const { currency, setCurrency, watchlistAlerts, resetData } = useApp();
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -86,6 +141,9 @@ function App() {
                 </span>
               </button>
             )}
+
+            {/* Market data status */}
+            <MarketStatusBadge />
 
             {/* Currency toggle */}
             <div className="flex items-center rounded-lg border border-white/10 bg-white/5">

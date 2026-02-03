@@ -15,6 +15,7 @@ import {
   EXCHANGE_RATE,
 } from '../data/mockData';
 import { calculateAllocation } from '../utils/calculations';
+import { useBrQuotes, useExchangeRate } from '../hooks/useMarketData';
 
 const AppContext = createContext();
 
@@ -44,7 +45,66 @@ export function AppProvider({ children }) {
   const [watchlist, setWatchlist] = useState(stored?.watchlist || defaultWatchlist);
   const [targets, setTargets] = useState(stored?.targets || defaultTargets);
   const [accumulationGoals, setAccumulationGoals] = useState(stored?.accumulationGoals || defaultAccumulationGoals);
-  const exchangeRate = EXCHANGE_RATE;
+
+  // ---------------------------------------------------------------------------
+  // Live market data (TanStack Query hooks)
+  // ---------------------------------------------------------------------------
+  const brTickers = useMemo(() => [
+    ...brStocks.map(s => s.ticker),
+    ...fiis.map(f => f.ticker),
+  ], [brStocks, fiis]);
+
+  const quotesQuery = useBrQuotes(brTickers);
+  const exchangeRateQuery = useExchangeRate();
+
+  // Exchange rate: live BCB PTAX -> fallback to hardcoded
+  const exchangeRate = exchangeRateQuery.data ?? EXCHANGE_RATE;
+
+  // Build a price map from live API data (derived, no setState)
+  const livePriceMap = useMemo(() => {
+    const map = {};
+    const results = quotesQuery.data;
+    if (!results) return map;
+    for (const q of results) {
+      if (q.symbol && q.regularMarketPrice != null) {
+        map[q.symbol] = q.regularMarketPrice;
+      }
+    }
+    return map;
+  }, [quotesQuery.data]);
+
+  // Overlay live prices onto the base state arrays (pure derivation)
+  const liveBrStocks = useMemo(() => {
+    if (Object.keys(livePriceMap).length === 0) return brStocks;
+    return brStocks.map(s => {
+      const live = livePriceMap[s.ticker];
+      return live != null && live !== s.currentPrice ? { ...s, currentPrice: live } : s;
+    });
+  }, [brStocks, livePriceMap]);
+
+  const liveFiis = useMemo(() => {
+    if (Object.keys(livePriceMap).length === 0) return fiis;
+    return fiis.map(f => {
+      const live = livePriceMap[f.ticker];
+      return live != null && live !== f.currentPrice ? { ...f, currentPrice: live } : f;
+    });
+  }, [fiis, livePriceMap]);
+
+  // Market data status (exposed to UI for freshness indicator)
+  const marketDataStatus = useMemo(() => ({
+    quotesUpdatedAt: quotesQuery.dataUpdatedAt || null,
+    quotesIsLoading: quotesQuery.isLoading,
+    quotesIsError: quotesQuery.isError,
+    quotesEnabled: !!import.meta.env.VITE_BRAPI_TOKEN,
+    exchangeRateUpdatedAt: exchangeRateQuery.dataUpdatedAt || null,
+    exchangeRateLive: exchangeRateQuery.data != null,
+  }), [
+    quotesQuery.dataUpdatedAt,
+    quotesQuery.isLoading,
+    quotesQuery.isError,
+    exchangeRateQuery.dataUpdatedAt,
+    exchangeRateQuery.data,
+  ]);
 
   // Persistência no localStorage
   useEffect(() => {
@@ -52,10 +112,10 @@ export function AppProvider({ children }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [brStocks, fiis, intlStocks, fixedIncome, realAssets, dividends, watchlist, targets, accumulationGoals]);
 
-  // Cálculos derivados
+  // Calculos derivados (use live arrays for current-price-dependent calculations)
   const allocation = useMemo(
-    () => calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exchangeRate),
-    [brStocks, fiis, intlStocks, fixedIncome, exchangeRate]
+    () => calculateAllocation(liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate),
+    [liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate]
   );
 
   const totalPatrimony = useMemo(() => {
@@ -111,8 +171,8 @@ export function AppProvider({ children }) {
   const value = {
     currency, setCurrency,
     brokerFilter, setBrokerFilter,
-    brStocks, setBrStocks,
-    fiis, setFiis,
+    brStocks: liveBrStocks, setBrStocks,
+    fiis: liveFiis, setFiis,
     intlStocks, setIntlStocks,
     fixedIncome, setFixedIncome,
     realAssets, setRealAssets,
@@ -128,6 +188,7 @@ export function AppProvider({ children }) {
     watchlistAlerts,
     patrimonialHistory,
     benchmarks,
+    marketDataStatus,
     resetData,
   };
 
