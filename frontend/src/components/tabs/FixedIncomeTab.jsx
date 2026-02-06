@@ -12,6 +12,7 @@ import {
   calculateFixedIncomeSummary,
   buildQuotaHistory,
   buildBenchmarkSeries,
+  buildBondReturnSeries,
   getEarliestDate,
   isoToBcb,
   todayBcb,
@@ -44,6 +45,11 @@ import {
   AlertCircle,
   Wallet,
   BarChart3,
+  Info,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { CHART_COLORS } from '../../data/mockData';
 import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
@@ -77,6 +83,11 @@ const BENCHMARK_COLORS = {
   selic: '#f59e0b',
   poupanca: '#94a3b8',
 };
+
+const INDIVIDUAL_BOND_COLORS = [
+  '#f472b6', '#fb923c', '#a78bfa', '#34d399', '#fbbf24',
+  '#60a5fa', '#f87171', '#4ade80', '#c084fc', '#38bdf8',
+];
 
 const CASH_TYPE_LABELS = {
   conta_corrente: 'Conta Corrente',
@@ -243,6 +254,9 @@ export default function FixedIncomeTab() {
   const [visibleLines, setVisibleLines] = useState(
     new Set(['portfolio', 'cdi', 'ipca', 'ipca6', 'selic'])
   );
+  const [excludedBondIds, setExcludedBondIds] = useState(new Set());
+  const [showIndividualBonds, setShowIndividualBonds] = useState(false);
+  const [showMethodology, setShowMethodology] = useState(false);
 
   // ---- Fetch BCB historical data ----
   const earliestDate = useMemo(() => getEarliestDate(fixedIncome), [fixedIncome]);
@@ -261,10 +275,27 @@ export default function FixedIncomeTab() {
     [fixedIncome, historicalData]
   );
 
-  const quotaHistory = useMemo(
-    () => buildQuotaHistory(fixedIncome, historicalData),
-    [fixedIncome, historicalData]
+  // ---- Bonds selected for portfolio composition ----
+  const selectedBonds = useMemo(
+    () => fixedIncome.filter((b) => !excludedBondIds.has(b.id)),
+    [fixedIncome, excludedBondIds]
   );
+
+  const quotaHistory = useMemo(
+    () => buildQuotaHistory(selectedBonds, historicalData),
+    [selectedBonds, historicalData]
+  );
+
+  // ---- Individual bond return series for chart ----
+  const individualBondSeries = useMemo(() => {
+    if (!showIndividualBonds || !historicalData) return {};
+    const result = {};
+    for (const bond of enrichedBonds) {
+      if (excludedBondIds.has(bond.id)) continue;
+      result[bond.id] = buildBondReturnSeries(bond, historicalData);
+    }
+    return result;
+  }, [enrichedBonds, excludedBondIds, showIndividualBonds, historicalData]);
 
   const benchmarkSeries = useMemo(
     () => (earliestDate ? buildBenchmarkSeries(earliestDate, historicalData) : {}),
@@ -303,7 +334,10 @@ export default function FixedIncomeTab() {
 
   // ---- Benchmark chart data (merged series) ----
   const benchmarkChartData = useMemo(() => {
-    if (!quotaHistory.length && !benchmarkSeries.cdi?.length) return [];
+    const hasAnyBenchmark = ['cdi', 'ipca', 'ipca6', 'selic', 'poupanca'].some(
+      (key) => benchmarkSeries[key]?.length > 0
+    );
+    if (!quotaHistory.length && !hasAnyBenchmark) return [];
 
     // Determine start date based on period filter
     const option = PERIOD_OPTIONS.find((p) => p.label === benchmarkPeriod);
@@ -345,26 +379,79 @@ export default function FixedIncomeTab() {
     addSeries(benchmarkSeries.selic, 'selic');
     addSeries(benchmarkSeries.poupanca, 'poupanca');
 
-    // Sort by date and normalize to start at 0%
+    // Add individual bond series
+    const bondKeys = [];
+    if (showIndividualBonds) {
+      for (const [bondId, series] of Object.entries(individualBondSeries)) {
+        const key = `bond_${bondId}`;
+        bondKeys.push(key);
+        addSeries(series, key);
+      }
+    }
+
+    // Sort by date
     const sorted = Array.from(dateMap.values()).sort((a, b) =>
       a.date.localeCompare(b.date)
     );
 
     if (sorted.length === 0) return [];
 
-    // Get base values from first entry for normalization when filtering
-    const base = sorted[0];
-    const keys = ['portfolio', 'cdi', 'ipca', 'ipca6', 'selic', 'poupanca'];
-    return sorted.map((entry) => {
+    const keys = ['portfolio', 'cdi', 'ipca', 'ipca6', 'selic', 'poupanca', ...bondKeys];
+
+    // Find a common start date so all series begin at the same point.
+    // Use portfolio's first date as anchor (chart's purpose is comparing against it).
+    // Fallback: latest first-date among all series.
+    let commonStartDate = null;
+    for (const entry of sorted) {
+      if (entry.portfolio != null) {
+        commonStartDate = entry.date;
+        break;
+      }
+    }
+    if (!commonStartDate) {
+      for (const key of keys) {
+        for (const entry of sorted) {
+          if (entry[key] != null) {
+            if (!commonStartDate || entry.date > commonStartDate) {
+              commonStartDate = entry.date;
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // Trim entries before common start date
+    const trimmed = commonStartDate
+      ? sorted.filter((e) => e.date >= commonStartDate)
+      : sorted;
+
+    if (trimmed.length === 0) return [];
+
+    // Find base value per key at common start
+    const baseValues = {};
+    for (const key of keys) {
+      for (const entry of trimmed) {
+        if (entry[key] != null) {
+          baseValues[key] = entry[key];
+          break;
+        }
+      }
+    }
+
+    // Normalize using compound return: ((1+val/100)/(1+base/100) - 1) * 100
+    return trimmed.map((entry) => {
       const normalized = { date: entry.date };
       for (const key of keys) {
-        if (entry[key] != null && base[key] != null) {
-          normalized[key] = entry[key] - base[key];
+        if (entry[key] != null && baseValues[key] != null) {
+          const entryFactor = 1 + entry[key] / 100;
+          const baseFactor = 1 + baseValues[key] / 100;
+          normalized[key] = (entryFactor / baseFactor - 1) * 100;
         }
       }
       return normalized;
     });
-  }, [quotaHistory, benchmarkSeries, benchmarkPeriod]);
+  }, [quotaHistory, benchmarkSeries, benchmarkPeriod, showIndividualBonds, individualBondSeries]);
 
   // ---- Sorted table data ----
   const sortedBonds = useMemo(() => {
@@ -604,6 +691,24 @@ export default function FixedIncomeTab() {
     });
   }
 
+  // ---- Bond selector for portfolio composition ----
+  function toggleBondSelection(bondId) {
+    setExcludedBondIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bondId)) next.delete(bondId);
+      else next.add(bondId);
+      return next;
+    });
+  }
+
+  function selectAllBonds() {
+    setExcludedBondIds(new Set());
+  }
+
+  function selectNoBonds() {
+    setExcludedBondIds(new Set(fixedIncome.map((b) => b.id)));
+  }
+
   // ---- Render ----
   return (
     <div className="space-y-6">
@@ -685,6 +790,439 @@ export default function FixedIncomeTab() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* ============= BENCHMARK COMPARISON + RENTABILITY ============= */}
+      <div className="glass-card p-6">
+        {/* Header: title + period filters */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <LineChartIcon className="w-5 h-5 text-violet-400" />
+            <h2 className="text-lg font-semibold text-slate-200">
+              Comparacao com Benchmarks
+            </h2>
+            {histLoading && (
+              <Loader2 className="w-4 h-4 text-slate-500 animate-spin ml-2" />
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => setBenchmarkPeriod(opt.label)}
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
+                  benchmarkPeriod === opt.label
+                    ? 'bg-indigo-600/30 text-indigo-300'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Methodology explanation (collapsible) */}
+        <div className="mb-4">
+          <button
+            onClick={() => setShowMethodology((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-300 transition"
+          >
+            <Info className="w-3.5 h-3.5" />
+            <span>Como e calculada a rentabilidade?</span>
+            {showMethodology ? (
+              <ChevronUp className="w-3 h-3" />
+            ) : (
+              <ChevronDown className="w-3 h-3" />
+            )}
+          </button>
+          {showMethodology && (
+            <div className="mt-3 rounded-lg bg-white/5 border border-white/10 px-4 py-3 space-y-2 text-xs text-slate-400">
+              <p>
+                <span className="text-slate-300 font-medium">Portfolio RF:</span>{' '}
+                Calculado pelo sistema de cotas. Cada titulo recebe cotas proporcionais ao valor
+                investido no momento da aplicacao. Novos aportes geram cotas ao preco corrente da cota,
+                eliminando a distorcao causada por entradas de capital. O valor da cota evolui
+                diariamente com base nas taxas CDI do Banco Central (serie 12).
+              </p>
+              <p>
+                <span className="text-slate-300 font-medium">CDI:</span>{' '}
+                Acumulado diario da taxa CDI (serie BCB 12). Representa o retorno de 100% do CDI.
+              </p>
+              <p>
+                <span className="text-slate-300 font-medium">IPCA:</span>{' '}
+                Acumulado mensal do indice IPCA (serie BCB 433).
+              </p>
+              <p>
+                <span className="text-slate-300 font-medium">IPCA+6%:</span>{' '}
+                IPCA acumulado multiplicado pelo fator de spread de 6% a.a. (252 dias uteis).
+              </p>
+              <p>
+                <span className="text-slate-300 font-medium">Selic:</span>{' '}
+                Acumulado diario da taxa Selic (serie BCB 11).
+              </p>
+              <p>
+                <span className="text-slate-300 font-medium">Poupanca:</span>{' '}
+                Regra simplificada: 70% da Selic (valida para Selic {'>'} 8,5% a.a.).
+              </p>
+              <div className="border-t border-white/10 pt-2 mt-2">
+                <p className="text-slate-500">
+                  Valores individuais dos titulos sao calculados conforme o indexador:
+                  CDI e Selic aplicam a taxa diaria com o percentual contratado;
+                  IPCA acumula mensalmente e aplica o spread diario em dias uteis;
+                  Prefixado compoe a taxa fixa contratada sobre dias uteis (base 252).
+                  O IR segue a tabela regressiva (22,5% ate 180d; 20% ate 360d; 17,5% ate 720d; 15% acima).
+                  Titulos LCI, LCA, CRI e CRA sao isentos.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bond selector for portfolio composition */}
+        {enrichedBonds.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">
+                Titulos na composicao
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={selectAllBonds}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 transition"
+                >
+                  Todos
+                </button>
+                <span className="text-slate-600">|</span>
+                <button
+                  onClick={selectNoBonds}
+                  className="text-[10px] text-slate-500 hover:text-slate-400 transition"
+                >
+                  Nenhum
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {enrichedBonds.map((bond, idx) => {
+                const isSelected = !excludedBondIds.has(bond.id);
+                const bondColor = INDIVIDUAL_BOND_COLORS[idx % INDIVIDUAL_BOND_COLORS.length];
+                return (
+                  <button
+                    key={bond.id}
+                    onClick={() => toggleBondSelection(bond.id)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition border ${
+                      isSelected
+                        ? 'bg-white/[0.06] border-white/15 text-slate-200'
+                        : 'bg-transparent border-white/5 text-slate-600'
+                    }`}
+                  >
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                      style={{
+                        backgroundColor: bondColor,
+                        opacity: isSelected ? 1 : 0.25,
+                      }}
+                    />
+                    <span className="whitespace-nowrap">{bond.title}</span>
+                    <span
+                      className="inline-block text-[10px] px-1.5 py-0.5 rounded-full"
+                      style={{
+                        backgroundColor: `${INDEXER_COLORS[bond.indexer] || INDEXER_COLORS.Outros}15`,
+                        color: isSelected
+                          ? (INDEXER_COLORS[bond.indexer] || INDEXER_COLORS.Outros)
+                          : 'currentColor',
+                      }}
+                    >
+                      {bond.indexer}
+                    </span>
+                    <span className={`text-[10px] ${isSelected ? colorClass(bond.returnPct) : ''}`}>
+                      {formatPct(bond.returnPct)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Clickable legend + individual toggle */}
+        <div className="flex flex-wrap items-center gap-4 mb-4">
+          {[
+            { key: 'portfolio', label: 'Portfolio RF' },
+            { key: 'cdi', label: 'CDI' },
+            { key: 'ipca', label: 'IPCA' },
+            { key: 'ipca6', label: 'IPCA+6%' },
+            { key: 'selic', label: 'Selic' },
+            { key: 'poupanca', label: 'Poupanca' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => toggleLine(key)}
+              className={`flex items-center gap-1.5 text-xs transition ${
+                visibleLines.has(key) ? 'text-slate-300' : 'text-slate-600'
+              }`}
+            >
+              <span
+                className="inline-block w-3 h-3 rounded-sm"
+                style={{
+                  backgroundColor: BENCHMARK_COLORS[key],
+                  opacity: visibleLines.has(key) ? 1 : 0.3,
+                }}
+              />
+              {label}
+            </button>
+          ))}
+
+          <span className="border-l border-white/10 h-4" />
+
+          <button
+            onClick={() => setShowIndividualBonds((v) => !v)}
+            className={`flex items-center gap-1.5 text-xs transition ${
+              showIndividualBonds ? 'text-violet-300' : 'text-slate-500 hover:text-slate-400'
+            }`}
+          >
+            {showIndividualBonds ? (
+              <Eye className="w-3.5 h-3.5" />
+            ) : (
+              <EyeOff className="w-3.5 h-3.5" />
+            )}
+            Individual
+          </button>
+        </div>
+
+        {/* Chart */}
+        {histLoading ? (
+          <div className="flex items-center justify-center h-64 text-slate-500">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+            Carregando dados BCB...
+          </div>
+        ) : histError ? (
+          <div className="flex items-center justify-center h-64 text-amber-400 text-sm">
+            <AlertCircle className="w-5 h-5 mr-2" />
+            Nao foi possivel carregar dados historicos do BCB. Tente novamente mais tarde.
+          </div>
+        ) : benchmarkChartData.length > 0 ? (
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={benchmarkChartData}
+                margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="rgba(255,255,255,0.06)"
+                />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: '#94a3b8', fontSize: 10 }}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                  tickLine={false}
+                  tickFormatter={(d) => {
+                    const parts = d.split('-');
+                    return `${parts[1]}/${parts[0].slice(2)}`;
+                  }}
+                  interval="preserveStartEnd"
+                  minTickGap={60}
+                />
+                <YAxis
+                  tick={{ fill: '#94a3b8', fontSize: 11 }}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                  tickLine={false}
+                  tickFormatter={(v) => `${v.toFixed(1)}%`}
+                />
+                <Tooltip content={<BenchmarkTooltip />} />
+                {visibleLines.has('portfolio') && (
+                  <Line
+                    type="monotone"
+                    dataKey="portfolio"
+                    name="Portfolio RF"
+                    stroke={BENCHMARK_COLORS.portfolio}
+                    strokeWidth={2.5}
+                    dot={false}
+                    connectNulls
+                  />
+                )}
+                {visibleLines.has('cdi') && (
+                  <Line
+                    type="monotone"
+                    dataKey="cdi"
+                    name="CDI"
+                    stroke={BENCHMARK_COLORS.cdi}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls
+                    strokeDasharray="4 2"
+                  />
+                )}
+                {visibleLines.has('ipca') && (
+                  <Line
+                    type="monotone"
+                    dataKey="ipca"
+                    name="IPCA"
+                    stroke={BENCHMARK_COLORS.ipca}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls
+                    strokeDasharray="4 2"
+                  />
+                )}
+                {visibleLines.has('ipca6') && (
+                  <Line
+                    type="monotone"
+                    dataKey="ipca6"
+                    name="IPCA+6%"
+                    stroke={BENCHMARK_COLORS.ipca6}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls
+                    strokeDasharray="4 2"
+                  />
+                )}
+                {visibleLines.has('selic') && (
+                  <Line
+                    type="monotone"
+                    dataKey="selic"
+                    name="Selic"
+                    stroke={BENCHMARK_COLORS.selic}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls
+                    strokeDasharray="4 2"
+                  />
+                )}
+                {visibleLines.has('poupanca') && (
+                  <Line
+                    type="monotone"
+                    dataKey="poupanca"
+                    name="Poupanca"
+                    stroke={BENCHMARK_COLORS.poupanca}
+                    strokeWidth={1.5}
+                    dot={false}
+                    connectNulls
+                    strokeDasharray="4 2"
+                  />
+                )}
+                {/* Individual bond lines */}
+                {showIndividualBonds &&
+                  enrichedBonds
+                    .filter((b) => !excludedBondIds.has(b.id))
+                    .map((bond, idx) => (
+                      <Line
+                        key={bond.id}
+                        type="monotone"
+                        dataKey={`bond_${bond.id}`}
+                        name={bond.title}
+                        stroke={INDIVIDUAL_BOND_COLORS[idx % INDIVIDUAL_BOND_COLORS.length]}
+                        strokeWidth={1.5}
+                        dot={false}
+                        connectNulls
+                      />
+                    ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
+            Sem dados suficientes para exibir o grafico
+          </div>
+        )}
+
+        {/* Individual bond performance details */}
+        {enrichedBonds.length > 0 && (
+          <div className="mt-5 border-t border-white/10 pt-4">
+            <h3 className="text-sm font-medium text-slate-300 mb-3">
+              Detalhamento por Titulo
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="py-2 px-2 text-left text-slate-500 font-medium uppercase tracking-wider" />
+                    <th className="py-2 px-2 text-left text-slate-500 font-medium uppercase tracking-wider">Titulo</th>
+                    <th className="py-2 px-2 text-left text-slate-500 font-medium uppercase tracking-wider">Indexador</th>
+                    <th className="py-2 px-2 text-left text-slate-500 font-medium uppercase tracking-wider">Taxa</th>
+                    <th className="py-2 px-2 text-left text-slate-500 font-medium uppercase tracking-wider">Aplicacao</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">Aplicado</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">Bruto</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">Liquido</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">Ret Bruto</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">Ret Liq</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">IR</th>
+                    <th className="py-2 px-2 text-right text-slate-500 font-medium uppercase tracking-wider">Peso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrichedBonds.map((bond, idx) => {
+                    const isSelected = !excludedBondIds.has(bond.id);
+                    const weight = totals.totalApplied > 0
+                      ? (bond.appliedValue / totals.totalApplied) * 100
+                      : 0;
+                    return (
+                      <tr
+                        key={bond.id}
+                        className={`border-b border-white/5 transition-colors ${
+                          isSelected ? 'hover:bg-white/[0.03]' : 'opacity-40'
+                        }`}
+                      >
+                        <td className="py-2 px-2">
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-sm"
+                            style={{
+                              backgroundColor: INDIVIDUAL_BOND_COLORS[idx % INDIVIDUAL_BOND_COLORS.length],
+                              opacity: isSelected ? 1 : 0.3,
+                            }}
+                          />
+                        </td>
+                        <td className="py-2 px-2 text-slate-200 font-medium whitespace-nowrap">
+                          {bond.title}
+                        </td>
+                        <td className="py-2 px-2">
+                          <span
+                            className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: `${INDEXER_COLORS[bond.indexer] || INDEXER_COLORS.Outros}20`,
+                              color: INDEXER_COLORS[bond.indexer] || INDEXER_COLORS.Outros,
+                            }}
+                          >
+                            {bond.indexer}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-slate-400 whitespace-nowrap">{bond.rate}</td>
+                        <td className="py-2 px-2 text-slate-500 whitespace-nowrap">
+                          {formatDate(bond.applicationDate)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-400 whitespace-nowrap">
+                          {formatCurrency(bond.appliedValue, currency, exchangeRate)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-200 whitespace-nowrap">
+                          {formatCurrency(bond.grossValue, currency, exchangeRate)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-200 whitespace-nowrap">
+                          {formatCurrency(bond.netValue, currency, exchangeRate)}
+                          {bond.taxExempt && (
+                            <span className="ml-0.5 text-[9px] text-emerald-400">isento</span>
+                          )}
+                        </td>
+                        <td className={`py-2 px-2 text-right font-semibold whitespace-nowrap ${colorClass(bond.returnPct)}`}>
+                          {formatPct(bond.returnPct)}
+                        </td>
+                        <td className={`py-2 px-2 text-right whitespace-nowrap ${colorClass(bond.netReturnPct)}`}>
+                          {formatPct(bond.netReturnPct)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-500 whitespace-nowrap">
+                          {bond.taxExempt ? '-' : `${(bond.irRate * 100).toFixed(1)}%`}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-400 whitespace-nowrap">
+                          {formatPct(weight)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===================== SECTION 1: TITULOS DE RENDA FIXA ===================== */}
@@ -1114,187 +1652,6 @@ export default function FixedIncomeTab() {
             Referencia: {new Date().toLocaleDateString('pt-BR')}
           </p>
         </div>
-      </div>
-
-      {/* ============= BENCHMARK COMPARISON CHART ============= */}
-      <div className="glass-card p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <LineChartIcon className="w-5 h-5 text-violet-400" />
-            <h2 className="text-lg font-semibold text-slate-200">
-              Comparacao com Benchmarks
-            </h2>
-            {histLoading && (
-              <Loader2 className="w-4 h-4 text-slate-500 animate-spin ml-2" />
-            )}
-          </div>
-
-          {/* Period filter */}
-          <div className="flex items-center gap-1">
-            {PERIOD_OPTIONS.map((opt) => (
-              <button
-                key={opt.label}
-                onClick={() => setBenchmarkPeriod(opt.label)}
-                className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
-                  benchmarkPeriod === opt.label
-                    ? 'bg-indigo-600/30 text-indigo-300'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Clickable legend */}
-        <div className="flex flex-wrap gap-4 mb-4">
-          {[
-            { key: 'portfolio', label: 'Portfolio RF' },
-            { key: 'cdi', label: 'CDI' },
-            { key: 'ipca', label: 'IPCA' },
-            { key: 'ipca6', label: 'IPCA+6%' },
-            { key: 'selic', label: 'Selic' },
-            { key: 'poupanca', label: 'Poupanca' },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => toggleLine(key)}
-              className={`flex items-center gap-1.5 text-xs transition ${
-                visibleLines.has(key) ? 'text-slate-300' : 'text-slate-600'
-              }`}
-            >
-              <span
-                className="inline-block w-3 h-3 rounded-sm"
-                style={{
-                  backgroundColor: BENCHMARK_COLORS[key],
-                  opacity: visibleLines.has(key) ? 1 : 0.3,
-                }}
-              />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {histLoading ? (
-          <div className="flex items-center justify-center h-64 text-slate-500">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
-            Carregando dados BCB...
-          </div>
-        ) : histError ? (
-          <div className="flex items-center justify-center h-64 text-amber-400 text-sm">
-            <AlertCircle className="w-5 h-5 mr-2" />
-            Nao foi possivel carregar dados historicos do BCB. Tente novamente mais tarde.
-          </div>
-        ) : benchmarkChartData.length > 0 ? (
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={benchmarkChartData}
-                margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(255,255,255,0.06)"
-                />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: '#94a3b8', fontSize: 10 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-                  tickLine={false}
-                  tickFormatter={(d) => {
-                    const parts = d.split('-');
-                    return `${parts[1]}/${parts[0].slice(2)}`;
-                  }}
-                  interval="preserveStartEnd"
-                  minTickGap={60}
-                />
-                <YAxis
-                  tick={{ fill: '#94a3b8', fontSize: 11 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-                  tickLine={false}
-                  tickFormatter={(v) => `${v.toFixed(1)}%`}
-                />
-                <Tooltip content={<BenchmarkTooltip />} />
-                {visibleLines.has('portfolio') && (
-                  <Line
-                    type="monotone"
-                    dataKey="portfolio"
-                    name="Portfolio RF"
-                    stroke={BENCHMARK_COLORS.portfolio}
-                    strokeWidth={2.5}
-                    dot={false}
-                    connectNulls
-                  />
-                )}
-                {visibleLines.has('cdi') && (
-                  <Line
-                    type="monotone"
-                    dataKey="cdi"
-                    name="CDI"
-                    stroke={BENCHMARK_COLORS.cdi}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                    strokeDasharray="4 2"
-                  />
-                )}
-                {visibleLines.has('ipca') && (
-                  <Line
-                    type="monotone"
-                    dataKey="ipca"
-                    name="IPCA"
-                    stroke={BENCHMARK_COLORS.ipca}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                    strokeDasharray="4 2"
-                  />
-                )}
-                {visibleLines.has('ipca6') && (
-                  <Line
-                    type="monotone"
-                    dataKey="ipca6"
-                    name="IPCA+6%"
-                    stroke={BENCHMARK_COLORS.ipca6}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                    strokeDasharray="4 2"
-                  />
-                )}
-                {visibleLines.has('selic') && (
-                  <Line
-                    type="monotone"
-                    dataKey="selic"
-                    name="Selic"
-                    stroke={BENCHMARK_COLORS.selic}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                    strokeDasharray="4 2"
-                  />
-                )}
-                {visibleLines.has('poupanca') && (
-                  <Line
-                    type="monotone"
-                    dataKey="poupanca"
-                    name="Poupanca"
-                    stroke={BENCHMARK_COLORS.poupanca}
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                    strokeDasharray="4 2"
-                  />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
-            Sem dados suficientes para exibir o grafico
-          </div>
-        )}
       </div>
 
       {/* ---- Bond CRUD Modal ---- */}

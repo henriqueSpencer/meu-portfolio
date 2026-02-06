@@ -285,16 +285,19 @@ export function buildQuotaHistory(bonds, historicalData) {
   if (!bonds.length || !historicalData) return [];
 
   const cdiSeries = historicalData['12'] || [];
-  if (!cdiSeries.length) return [];
+  const selicSeries = historicalData['11'] || [];
+  // Fallback to Selic if CDI is unavailable (they track closely)
+  const rateSeries = cdiSeries.length ? cdiSeries : selicSeries;
+  if (!rateSeries.length) return [];
 
-  // Build a date->CDI-rate map for daily iteration
+  // Build a date->rate map for daily iteration
   const cdiByDate = new Map();
-  for (const entry of cdiSeries) {
+  for (const entry of rateSeries) {
     cdiByDate.set(entry.date, entry.value);
   }
 
   // Get all BCB dates sorted
-  const allDates = cdiSeries.map((e) => e.date);
+  const allDates = rateSeries.map((e) => e.date);
   if (!allDates.length) return [];
 
   // Find earliest application date
@@ -416,6 +419,95 @@ export function buildBenchmarkSeries(startDate, historicalData) {
   const poupanca = buildAccumulated(selicSeries, 'Poupanca', 0.7);
 
   return { cdi, ipca, ipca6, selic, poupanca };
+}
+
+// ---------------------------------------------------------------------------
+// Individual bond return series (for chart overlay)
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a return-% time series for a single bond based on its indexer.
+ * Returns [{ date: 'YYYY-MM-DD', value: returnPct }]
+ */
+export function buildBondReturnSeries(bond, historicalData) {
+  if (!historicalData || !bond.applicationDate || !bond.appliedValue) return [];
+
+  const appDate = parseIsoDate(bond.applicationDate);
+  if (!appDate) return [];
+
+  const cdiSeries = historicalData['12'] || [];
+  const ipcaSeries = historicalData['433'] || [];
+  const selicSeries = historicalData['11'] || [];
+
+  const series = [];
+
+  switch (bond.indexer) {
+    case 'CDI': {
+      const pct = (bond.contractedRate || 100) / 100;
+      let accumulated = bond.appliedValue;
+      for (const entry of cdiSeries) {
+        const entryDate = parseBcbDate(entry.date);
+        if (!entryDate || entryDate <= appDate) continue;
+        accumulated *= 1 + (entry.value / 100) * pct;
+        series.push({
+          date: toIsoString(entryDate),
+          value: ((accumulated / bond.appliedValue) - 1) * 100,
+        });
+      }
+      break;
+    }
+    case 'Selic': {
+      const pct = (bond.contractedRate || 100) / 100;
+      let accumulated = bond.appliedValue;
+      for (const entry of selicSeries) {
+        const entryDate = parseBcbDate(entry.date);
+        if (!entryDate || entryDate <= appDate) continue;
+        accumulated *= 1 + (entry.value / 100) * pct;
+        series.push({
+          date: toIsoString(entryDate),
+          value: ((accumulated / bond.appliedValue) - 1) * 100,
+        });
+      }
+      break;
+    }
+    case 'IPCA': {
+      const dailySpreadFactor = Math.pow(1 + (bond.contractedRate || 0) / 100, 1 / 252);
+      let ipcaFactor = 1;
+      let busDays = 0;
+      let lastDate = appDate;
+      for (const entry of ipcaSeries) {
+        const entryDate = parseBcbDate(entry.date);
+        if (!entryDate || entryDate <= appDate) continue;
+        ipcaFactor *= 1 + entry.value / 100;
+        busDays += businessDaysBetween(lastDate, entryDate);
+        lastDate = entryDate;
+        const spreadFactor = Math.pow(dailySpreadFactor, busDays);
+        series.push({
+          date: toIsoString(entryDate),
+          value: (ipcaFactor * spreadFactor - 1) * 100,
+        });
+      }
+      break;
+    }
+    case 'Prefixado': {
+      let bd = 0;
+      for (const entry of cdiSeries) {
+        const entryDate = parseBcbDate(entry.date);
+        if (!entryDate || entryDate <= appDate) continue;
+        bd++;
+        const factor = Math.pow(1 + (bond.contractedRate || 0) / 100, bd / 252);
+        series.push({
+          date: toIsoString(entryDate),
+          value: (factor - 1) * 100,
+        });
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  return series;
 }
 
 // ---------------------------------------------------------------------------

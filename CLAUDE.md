@@ -2,26 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Structure
-
-```
-dash_financeiro/
-├── docker-compose.yml        # Orchestrates db + backend + frontend
-├── .env.example              # Environment variables template
-├── frontend/                 # React SPA
-│   ├── Dockerfile            # Multi-stage: node build -> nginx
-│   ├── nginx.conf            # Static serve + /api proxy -> backend
-│   ├── package.json
-│   ├── vite.config.js        # /api proxy for dev mode
-│   └── src/
-└── backend/                  # FastAPI + PostgreSQL
-    ├── Dockerfile            # python:3.12-slim + alembic + uvicorn
-    ├── requirements.txt
-    ├── alembic.ini
-    ├── alembic/              # DB migrations
-    └── app/                  # FastAPI application
-```
-
 ## Commands
 
 ### Docker (full stack)
@@ -35,7 +15,6 @@ dash_financeiro/
 - `cd frontend && npm run dev` — Vite dev server at http://localhost:5173 (proxies /api to localhost:8000)
 - `cd frontend && npm run build` — Production build to `frontend/dist/`
 - `cd frontend && npm run lint` — ESLint check
-- `cd frontend && npm run preview` — Preview production build
 
 ### Backend (standalone dev)
 
@@ -49,20 +28,17 @@ No test framework is configured yet.
 
 ### Frontend
 - **React 19** with JSX (no TypeScript)
-- **Vite 7** with `@vitejs/plugin-react`
-- **Tailwind CSS 4** via `@tailwindcss/vite` plugin
+- **Vite 7** with `@vitejs/plugin-react` + `@tailwindcss/vite` (Tailwind CSS 4 native Vite plugin, not PostCSS)
 - **TanStack Query 5** for server state (CRUD + market data)
-- **Recharts 3** for charts
-- **Lucide React** for icons
+- **Recharts 3** for charts, **Lucide React** for icons
 
 ### Backend
 - **FastAPI** with async endpoints
 - **SQLAlchemy 2** (async) with asyncpg driver
 - **PostgreSQL 16** via Docker
-- **Alembic** for database migrations
-- **Pydantic v2** for request/response schemas
-- **yfinance** for market data (Yahoo Finance — no API key needed)
-- **httpx** for external API calls (BCB)
+- **Alembic** for migrations (auto-runs on backend startup via entrypoint)
+- **Pydantic v2** for schemas (`model_config = {"from_attributes": True}` on all read schemas)
+- **yfinance** for market data (no API key), **httpx** for BCB API calls
 
 ## Architecture
 
@@ -71,63 +47,102 @@ Personal investment tracking dashboard. Monorepo with Docker Compose orchestrati
 ### Data flow
 
 ```
-PostgreSQL -> Backend (FastAPI) -> Frontend (React + TanStack Query)
-                 |
-                 └── yfinance (Yahoo Finance) / BCB (market data proxy)
+PostgreSQL -> Backend (FastAPI /api/*) -> Frontend (React + TanStack Query)
+                    |
+                    └── yfinance (Yahoo Finance) / BCB (market data proxy)
 ```
 
-1. **Backend** serves REST API at `/api/*`. On first start, seeds the database with demo data if empty.
-2. **Frontend** fetches data via `src/services/api.js` which calls `/api/*` endpoints. `src/hooks/usePortfolio.js` wraps each entity in TanStack Query CRUD hooks.
-3. **AppContext.jsx** consumes the portfolio hooks, computes derived values (allocation, totals, dividends summary), and exposes setter-compatible wrappers that translate `setState`-style calls into API mutations.
-4. **Tab components** consume `useApp()` exactly as before — the CRUD interface (`setBrStocks`, `setFiis`, etc.) is preserved as a compatibility layer.
+### Three-layer frontend state
+
+1. **TanStack Query** (`src/hooks/usePortfolio.js`): Generic `useCrud()` factory creates standard CRUD hooks per entity. `useTransactions()` invalidates ALL asset queries on mutation.
+2. **AppContext** (`src/context/AppContext.jsx`): Wraps hooks, computes derived values (allocation, totals, dividends summary), merges live prices at read-time via `useMemo`. Exposes setter-compatible API (`setBrStocks`, `setFiis`, etc.) that performs smart JSON diffing to infer create/update/delete operations.
+3. **Tab components**: Consume `useApp()` hook. 12 tabs registered via `TABS` array + `TAB_COMPONENTS` map in `App.jsx`.
+
+### Adding a new entity (checklist)
+
+1. Model: `backend/app/models/<entity>.py` (inherit from `Base`), export in `models/__init__.py`
+2. Schemas: `backend/app/schemas/<entity>.py` (Create/Update/Read Pydantic models)
+3. Router: `backend/app/routers/<entity>.py` (standard CRUD with `get_db` dependency)
+4. Register: import + `app.include_router()` in `backend/app/main.py`
+5. Migration: `cd backend && alembic revision --autogenerate -m "description"` then `alembic upgrade head`
+6. Seed: add data to `backend/app/seed/seed_data.py`, update `run_seed()` in `routers/seed.py`
+7. Frontend: add hook in `usePortfolio.js`, wire into `AppContext.jsx`, create tab component
+
+### Transaction system
+
+Transactions (`/api/transactions`) are immutable (no PUT endpoint). Creating a transaction auto-updates the linked asset position (qty, avg_price) via `_apply()`. Deleting reverses via `_revert()`. Asset resolution uses `MODEL_MAP` dict mapping asset classes to their SQLAlchemy models. Supports 7 operation types: compra, venda, aporte, resgate, transferencia, desdobramento, bonificacao.
+
+### Market data strategy
+
+- **BR quotes**: `useBrQuotes()` batches tickers, auto-refetches every 15 min during B3 hours (Mon-Fri 10-17 BRT). Backend adds `.SA` suffix for yfinance.
+- **Exchange rate**: `useExchangeRate()` fetches USD/BRL PTAX hourly from BCB. Fallback: `FALLBACK_EXCHANGE_RATE = 6.05`.
+- **Indicators**: SELIC (series 4189), CDI (4391), IPCA (433) from BCB public API.
+- Live prices merge into portfolio data at read-time — database values stay unchanged as fallback.
 
 ### API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET/POST | `/api/br-stocks` | List / create BR stocks |
-| GET/PUT/DELETE | `/api/br-stocks/{ticker}` | Read / update / delete |
-| GET/POST | `/api/fiis` | List / create FIIs |
-| GET/PUT/DELETE | `/api/fiis/{ticker}` | Read / update / delete |
-| GET/POST | `/api/intl-stocks` | List / create intl stocks |
-| GET/PUT/DELETE | `/api/intl-stocks/{ticker}` | Read / update / delete |
-| GET/POST | `/api/fixed-income` | List / create fixed income |
-| GET/PUT/DELETE | `/api/fixed-income/{id}` | Read / update / delete |
-| GET/POST | `/api/real-assets` | List / create real assets |
-| GET/PUT/DELETE | `/api/real-assets/{id}` | Read / update / delete |
-| GET/POST | `/api/dividends` | List / create dividends |
-| GET/PUT/DELETE | `/api/dividends/{id}` | Read / update / delete |
-| GET/POST | `/api/watchlist` | List / create watchlist |
-| GET/PUT/DELETE | `/api/watchlist/{ticker}` | Read / update / delete |
-| GET/POST | `/api/allocation-targets` | List / create targets |
-| PUT/DELETE | `/api/allocation-targets/{id}` | Update / delete |
-| GET/POST | `/api/accumulation-goals` | List / create goals |
-| GET/PUT/DELETE | `/api/accumulation-goals/{id}` | Read / update / delete |
-| GET | `/api/patrimonial-history` | List patrimonial history |
-| GET | `/api/market-data/quotes?tickers=X,Y` | Live BR quotes (yfinance, adds .SA suffix) |
-| GET | `/api/market-data/quotes/intl?tickers=X,Y` | Live intl quotes (yfinance) |
-| GET | `/api/market-data/exchange-rate` | USD/BRL PTAX rate (BCB) |
-| GET | `/api/market-data/indicators` | SELIC, CDI, IPCA |
-| POST | `/api/seed/reset` | Reset DB to seed data |
-| GET | `/api/seed/static` | Benchmarks + accumulation history |
+| GET/POST | `/api/br-stocks` | BR stocks |
+| GET/PUT/DELETE | `/api/br-stocks/{ticker}` | |
+| GET/POST | `/api/fiis` | FIIs |
+| GET/PUT/DELETE | `/api/fiis/{ticker}` | |
+| GET/POST | `/api/intl-stocks` | Intl stocks |
+| GET/PUT/DELETE | `/api/intl-stocks/{ticker}` | |
+| GET/POST | `/api/fixed-income` | Fixed income |
+| GET/PUT/DELETE | `/api/fixed-income/{id}` | |
+| GET/POST | `/api/fi-etfs` | FI ETFs |
+| GET/PUT/DELETE | `/api/fi-etfs/{ticker}` | |
+| GET/POST | `/api/cash-accounts` | Cash accounts |
+| GET/PUT/DELETE | `/api/cash-accounts/{id}` | |
+| GET/POST | `/api/real-assets` | Real assets |
+| GET/PUT/DELETE | `/api/real-assets/{id}` | |
+| GET/POST | `/api/dividends` | Dividends |
+| GET/PUT/DELETE | `/api/dividends/{id}` | |
+| GET/POST | `/api/transactions` | Transactions (no PUT) |
+| GET/DELETE | `/api/transactions/{id}` | |
+| GET/POST | `/api/watchlist` | Watchlist |
+| GET/PUT/DELETE | `/api/watchlist/{ticker}` | |
+| GET/POST | `/api/allocation-targets` | Allocation targets |
+| PUT/DELETE | `/api/allocation-targets/{id}` | |
+| GET/POST | `/api/accumulation-goals` | Accumulation goals |
+| GET/PUT/DELETE | `/api/accumulation-goals/{id}` | |
+| GET | `/api/patrimonial-history` | Patrimonial history |
+| GET | `/api/market-data/quotes?tickers=X,Y` | BR quotes (yfinance, .SA suffix) |
+| GET | `/api/market-data/quotes/intl?tickers=X,Y` | Intl quotes (yfinance) |
+| GET | `/api/market-data/exchange-rate` | USD/BRL PTAX (BCB) |
+| GET | `/api/market-data/indicators` | SELIC, CDI, IPCA (BCB) |
+| GET | `/api/market-data/historical-rates` | BCB historical series |
+| POST | `/api/seed/reset` | Reset DB to seed data (resets sequences) |
+| GET | `/api/seed/static` | Benchmarks + accumulation history (no DB) |
 | GET | `/api/health` | Health check |
 
-### Key conventions
+## Key Conventions
 
-- **Snake_case API, camelCase UI**: Backend uses snake_case (`avg_price`). Frontend tabs use camelCase (`avgPrice`). The `AppContext.jsx` setter wrappers handle translation via `src/utils/apiHelpers.js`.
-- **Glass-card styling**: `.glass-card` CSS class in `index.css` or local `GLASS` constant.
-- **Currency formatting**: `formatCurrency(value, currency, exchangeRate)` from `src/utils/formatters.js`.
-- **Financial calculations**: `src/utils/calculations.js` — Graham, Bazin, allocation, suggestions.
+- **Snake_case API, camelCase UI**: Backend snake_case → `camelizeKeys()` in `src/services/api.js` on responses. Frontend camelCase → `toSnakeCase()` in `src/utils/apiHelpers.js` on requests. AppContext setters handle translation.
 - **Dark mode only**: Background `#0b0f1a`, text `#e2e8f0`. Accents: indigo, purple, cyan. Semantic: emerald (positive), red (negative), amber (warning).
-- **Tab routing**: State-driven via `App.jsx` TAB_COMPONENTS map. No router.
+- **Glass-card styling**: `.glass-card` CSS class in `index.css`.
+- **Currency formatting**: `formatCurrency(value, currency, exchangeRate)` from `src/utils/formatters.js`.
+- **Financial calculations**: `src/utils/calculations.js` — Graham (`sqrt(22.5 * LPA * VPA)`), Bazin (`median(dividends_5y) / 0.06`), allocation (includes FI ETFs in "Renda Fixa", cash accounts in "Caixa"), contribution suggestions.
+- **Tab routing**: State-driven via `App.jsx` TAB_COMPONENTS map. No router library.
+- **ESLint**: Flat config (`eslint.config.js`). `no-unused-vars` ignores vars starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`).
 
-### ESLint
+## Docker Services
 
-The `no-unused-vars` rule ignores variables starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`).
+```
+db (postgres:16-alpine) → healthcheck: pg_isready
+  ↓
+backend (python:3.12-slim) → entrypoint: alembic upgrade head && uvicorn
+  ↓                          healthcheck: curl /api/health
+frontend (nginx:alpine)    → proxies /api/ to backend:8000
+                             SPA fallback for client routes
+```
 
-### Environment Variables
+Network: `dashnet` bridge. Volume: `postgres_data` for DB persistence. All services: `unless-stopped` restart policy.
 
-Configured in `.env` at the project root (used by `docker-compose.yml`):
+## Environment Variables
+
+Configured in `.env` at project root (see `.env.example`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
