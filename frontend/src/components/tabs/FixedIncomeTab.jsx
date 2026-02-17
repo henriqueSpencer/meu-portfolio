@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { toSnakeCase } from '../../utils/apiHelpers';
 import { useHistoricalRates } from '../../hooks/useMarketData';
 import {
   formatBRL,
@@ -195,7 +196,6 @@ const EMPTY_BOND = {
   type: 'Tesouro Direto',
   rate: '',
   appliedValue: '',
-  currentValue: '',
   applicationDate: '',
   maturityDate: '',
   broker: '',
@@ -230,6 +230,7 @@ export default function FixedIncomeTab() {
     fiEtfs, setFiEtfs,
     cashAccounts, setCashAccounts,
     currency, exchangeRate,
+    createTransaction, fixedIncomeCrud, fiEtfsCrud, cashAccountsCrud,
   } = useApp();
   const [sortField, setSortField] = useState('maturityDate');
   const [sortAsc, setSortAsc] = useState(true);
@@ -440,6 +441,8 @@ export default function FixedIncomeTab() {
     }
 
     // Normalize using compound return: ((1+val/100)/(1+base/100) - 1) * 100
+    // Then forward-fill sparse series (e.g. monthly IPCA) so tooltip shows all lines
+    const lastSeen = {};
     return trimmed.map((entry) => {
       const normalized = { date: entry.date };
       for (const key of keys) {
@@ -447,6 +450,9 @@ export default function FixedIncomeTab() {
           const entryFactor = 1 + entry[key] / 100;
           const baseFactor = 1 + baseValues[key] / 100;
           normalized[key] = (entryFactor / baseFactor - 1) * 100;
+          lastSeen[key] = normalized[key];
+        } else if (lastSeen[key] != null) {
+          normalized[key] = lastSeen[key];
         }
       }
       return normalized;
@@ -526,7 +532,6 @@ export default function FixedIncomeTab() {
       type: bond.type,
       rate: bond.rate,
       appliedValue: String(bond.appliedValue),
-      currentValue: String(bond.currentValue),
       applicationDate: bond.applicationDate || '',
       maturityDate: bond.maturityDate || '',
       broker: bond.broker || '',
@@ -537,7 +542,7 @@ export default function FixedIncomeTab() {
     setModalOpen(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const contractedRate = Number(form.contractedRate) || 0;
     const parsed = {
       id: editing ? editing.id : String(Date.now()),
@@ -545,7 +550,7 @@ export default function FixedIncomeTab() {
       type: form.type,
       rate: form.rate.trim() || generateRateText(form.indexer, contractedRate),
       appliedValue: Number(form.appliedValue) || 0,
-      currentValue: Number(form.currentValue) || 0,
+      currentValue: 0,
       applicationDate: form.applicationDate,
       maturityDate: form.maturityDate,
       broker: form.broker.trim(),
@@ -554,16 +559,60 @@ export default function FixedIncomeTab() {
       taxExempt: form.taxExempt,
     };
     if (!parsed.title) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editing) {
+      const oldApplied = editing.appliedValue || 0;
+      const newApplied = parsed.appliedValue;
+      const delta = newApplied - oldApplied;
+      // Preserve currentValue from existing
+      parsed.currentValue = editing.currentValue || 0;
       setFixedIncome((prev) => prev.map((b) => (b.id === editing.id ? parsed : b)));
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'aporte' : 'resgate',
+          assetClass: 'fixed_income',
+          assetId: parsed.id,
+          assetName: parsed.title,
+          totalValue: Math.abs(delta),
+          broker: parsed.broker,
+          notes: 'Ajuste via aba Renda Fixa',
+        });
+      }
     } else {
-      setFixedIncome((prev) => [...prev, parsed]);
+      const assetData = { ...parsed, appliedValue: 0, currentValue: 0 };
+      await fixedIncomeCrud.create.mutateAsync(toSnakeCase(assetData, 'fixedIncome'));
+      if (parsed.appliedValue > 0) {
+        await createTransaction({
+          date: parsed.applicationDate || today,
+          operationType: 'aporte',
+          assetClass: 'fixed_income',
+          assetId: parsed.id,
+          assetName: parsed.title,
+          totalValue: parsed.appliedValue,
+          broker: parsed.broker,
+          notes: 'Aporte inicial via aba Renda Fixa',
+        });
+      }
     }
     setModalOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!editing) return;
+    if ((editing.appliedValue || 0) > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: 'resgate',
+        assetClass: 'fixed_income',
+        assetId: editing.id,
+        assetName: editing.title,
+        totalValue: editing.currentValue || editing.appliedValue,
+        broker: editing.broker,
+        notes: 'Encerramento via aba Renda Fixa',
+      });
+    }
     setFixedIncome((prev) => prev.filter((b) => b.id !== editing.id));
     setModalOpen(false);
   }
@@ -614,7 +663,7 @@ export default function FixedIncomeTab() {
     setEtfModalOpen(true);
   }
 
-  function handleSaveEtf() {
+  async function handleSaveEtf() {
     const parsed = {
       ticker: etfForm.ticker.trim().toUpperCase(),
       name: etfForm.name.trim(),
@@ -624,16 +673,61 @@ export default function FixedIncomeTab() {
       broker: etfForm.broker.trim(),
     };
     if (!parsed.ticker || !parsed.name) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editingEtf) {
+      const oldQty = editingEtf.qty || 0;
+      const newQty = parsed.qty;
+      const delta = newQty - oldQty;
       setFiEtfs((prev) => prev.map((e) => (e.ticker === editingEtf.ticker ? parsed : e)));
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'compra' : 'venda',
+          assetClass: 'fi_etf',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: Math.abs(delta),
+          unitPrice: parsed.avgPrice,
+          broker: parsed.broker,
+          notes: 'Ajuste via aba Renda Fixa',
+        });
+      }
     } else {
-      setFiEtfs((prev) => [...prev, parsed]);
+      const assetData = { ...parsed, qty: 0, avgPrice: 0 };
+      await fiEtfsCrud.create.mutateAsync(toSnakeCase(assetData, 'fiEtf'));
+      if (parsed.qty > 0) {
+        await createTransaction({
+          date: today,
+          operationType: 'compra',
+          assetClass: 'fi_etf',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: parsed.qty,
+          unitPrice: parsed.avgPrice,
+          broker: parsed.broker,
+          notes: 'Posicao inicial via aba Renda Fixa',
+        });
+      }
     }
     setEtfModalOpen(false);
   }
 
-  function handleDeleteEtf() {
+  async function handleDeleteEtf() {
     if (!editingEtf) return;
+    if ((editingEtf.qty || 0) > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: 'venda',
+        assetClass: 'fi_etf',
+        ticker: editingEtf.ticker,
+        assetName: editingEtf.name,
+        qty: editingEtf.qty,
+        unitPrice: editingEtf.currentPrice || editingEtf.avgPrice,
+        broker: editingEtf.broker,
+        notes: 'Encerramento via aba Renda Fixa',
+      });
+    }
     setFiEtfs((prev) => prev.filter((e) => e.ticker !== editingEtf.ticker));
     setEtfModalOpen(false);
   }
@@ -657,7 +751,7 @@ export default function FixedIncomeTab() {
     setCashModalOpen(true);
   }
 
-  function handleSaveCash() {
+  async function handleSaveCash() {
     const parsed = {
       id: editingCash ? editingCash.id : String(Date.now()),
       name: cashForm.name.trim(),
@@ -667,16 +761,58 @@ export default function FixedIncomeTab() {
       currency: cashForm.currency,
     };
     if (!parsed.name) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editingCash) {
+      const oldBalance = editingCash.balance || 0;
+      const newBalance = parsed.balance;
+      const delta = newBalance - oldBalance;
       setCashAccounts((prev) => prev.map((a) => (a.id === editingCash.id ? parsed : a)));
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'aporte' : 'resgate',
+          assetClass: 'cash_account',
+          assetId: parsed.id,
+          assetName: parsed.name,
+          totalValue: Math.abs(delta),
+          broker: parsed.institution,
+          notes: 'Ajuste via aba Renda Fixa',
+        });
+      }
     } else {
-      setCashAccounts((prev) => [...prev, parsed]);
+      const assetData = { ...parsed, balance: 0 };
+      await cashAccountsCrud.create.mutateAsync(toSnakeCase(assetData, 'cashAccount'));
+      if (parsed.balance !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: parsed.balance > 0 ? 'aporte' : 'resgate',
+          assetClass: 'cash_account',
+          assetId: parsed.id,
+          assetName: parsed.name,
+          totalValue: Math.abs(parsed.balance),
+          broker: parsed.institution,
+          notes: 'Saldo inicial via aba Renda Fixa',
+        });
+      }
     }
     setCashModalOpen(false);
   }
 
-  function handleDeleteCash() {
+  async function handleDeleteCash() {
     if (!editingCash) return;
+    if ((editingCash.balance || 0) !== 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: editingCash.balance > 0 ? 'resgate' : 'aporte',
+        assetClass: 'cash_account',
+        assetId: editingCash.id,
+        assetName: editingCash.name,
+        totalValue: Math.abs(editingCash.balance),
+        broker: editingCash.institution,
+        notes: 'Encerramento via aba Renda Fixa',
+      });
+    }
     setCashAccounts((prev) => prev.filter((a) => a.id !== editingCash.id));
     setCashModalOpen(false);
   }
@@ -1714,38 +1850,25 @@ export default function FixedIncomeTab() {
             placeholder="IPCA + 6.20%"
           />
         </FormField>
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="Valor Aplicado">
-            <FormInput
-              type="number"
-              step="0.01"
-              value={form.appliedValue}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, appliedValue: e.target.value }))
-              }
-            />
-          </FormField>
-          <FormField label="Valor Atual (manual)">
-            <FormInput
-              type="number"
-              step="0.01"
-              value={form.currentValue}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, currentValue: e.target.value }))
-              }
-            />
-          </FormField>
-        </div>
-        {/* Show computed value when BCB data is available */}
+        <FormField label="Valor Aplicado">
+          <FormInput
+            type="number"
+            step="0.01"
+            value={form.appliedValue}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, appliedValue: e.target.value }))
+            }
+          />
+        </FormField>
         {editing && historicalData && (
           <div className="rounded-lg bg-white/5 border border-white/10 px-4 py-3">
             <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">
-              Valor Calculado (BCB)
+              Valor Atual (calculado via BCB)
             </p>
             <p className="text-sm font-medium text-emerald-400">
               {formatBRL(
                 enrichedBonds.find((b) => b.id === editing.id)?.grossValue ??
-                  (Number(form.currentValue) || 0)
+                  form.appliedValue
               )}
             </p>
           </div>

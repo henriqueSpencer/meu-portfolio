@@ -106,3 +106,46 @@ export async function resetSeed() {
 export async function fetchStaticData() {
   return request('/seed/static', { raw: true });
 }
+
+// ---------------------------------------------------------------------------
+// B3 Import
+// ---------------------------------------------------------------------------
+
+export async function uploadB3Preview(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/import/b3/preview`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `API ${res.status}: ${res.statusText}`);
+  }
+  const data = await res.json();
+  return camelizeKeys(data);
+}
+
+export async function confirmB3Import(rows) {
+  // Convert rows back to snake_case for the backend
+  const snakeRows = rows.map(r => ({
+    date: r.date,
+    operation_type: r.operationType,
+    market: r.market,
+    asset_class: r.assetClass,
+    ticker: r.ticker,
+    qty: r.qty,
+    unit_price: r.unitPrice,
+    total_value: r.totalValue,
+    broker: r.broker,
+    asset_name: r.assetName,
+    asset_exists: r.assetExists,
+    is_duplicate: r.isDuplicate,
+    is_skipped: r.isSkipped,
+    skip_reason: r.skipReason,
+  }));
+  return request('/import/b3/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ rows: snakeRows }),
+  });
+}

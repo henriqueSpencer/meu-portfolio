@@ -19,6 +19,8 @@ import {
   patrimonialHistoryApi,
   fetchStaticData,
   resetSeed,
+  uploadB3Preview,
+  confirmB3Import,
 } from '../services/api';
 
 // ---------------------------------------------------------------------------
@@ -127,12 +129,17 @@ export function useTransactions() {
     onSuccess: invalidateAll,
   });
 
+  const update = useMutation({
+    mutationFn: ({ id, data }) => transactionsApi.update(id, data),
+    onSuccess: invalidateAll,
+  });
+
   const remove = useMutation({
     mutationFn: (id) => transactionsApi.remove(id),
     onSuccess: invalidateAll,
   });
 
-  return { query, create, remove };
+  return { query, create, update, remove };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,4 +172,28 @@ export function useResetData() {
     mutationFn: resetSeed,
     onSuccess: () => qc.invalidateQueries(),
   });
+}
+
+// ---------------------------------------------------------------------------
+// B3 Import
+// ---------------------------------------------------------------------------
+
+export function useB3Import() {
+  const qc = useQueryClient();
+
+  const preview = useMutation({
+    mutationFn: (file) => uploadB3Preview(file),
+  });
+
+  const confirm = useMutation({
+    mutationFn: (rows) => confirmB3Import(rows),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      for (const key of ASSET_KEYS) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+
+  return { preview, confirm };
 }

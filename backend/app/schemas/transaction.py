@@ -18,6 +18,22 @@ class TransactionCreate(BaseModel):
     notes: str | None = None
 
 
+class TransactionUpdate(BaseModel):
+    date: datetime.date | None = None
+    operation_type: str | None = None
+    asset_class: str | None = None
+    ticker: str | None = None
+    asset_id: str | None = None
+    asset_name: str | None = None
+    qty: float | None = None
+    unit_price: float | None = None
+    total_value: float | None = None
+    broker: str | None = None
+    broker_destination: str | None = None
+    fees: float | None = None
+    notes: str | None = None
+
+
 class TransactionRead(BaseModel):
     id: int
     date: datetime.date

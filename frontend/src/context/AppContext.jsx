@@ -18,6 +18,7 @@ import {
   usePatrimonialHistory,
   useStaticData,
   useResetData,
+  useB3Import,
 } from '../hooks/usePortfolio';
 
 const FALLBACK_EXCHANGE_RATE = 6.05;
@@ -48,6 +49,7 @@ export function AppProvider({ children }) {
   const patrimonialHistoryQuery = usePatrimonialHistory();
   const staticDataQuery = useStaticData();
   const resetMutation = useResetData();
+  const b3Import = useB3Import();
 
   // Raw data arrays (fallback to stable empty refs while loading)
   const brStocks = brStocksCrud.query.data ?? EMPTY;
@@ -378,6 +380,11 @@ export function AppProvider({ children }) {
     }
   }, [cashAccounts, cashAccountsCrud]);
 
+  const createTransaction = useCallback(async (txData) => {
+    const payload = toSnakeCase(txData, 'transaction');
+    return transactionsCrud.create.mutateAsync(payload);
+  }, [transactionsCrud]);
+
   const resetData = useCallback(() => {
     resetMutation.mutate();
   }, [resetMutation]);
@@ -399,7 +406,9 @@ export function AppProvider({ children }) {
     watchlist, setWatchlist,
     targets, setTargets,
     accumulationGoals, setAccumulationGoals,
-    transactions, transactionsCrud,
+    transactions, transactionsCrud, createTransaction,
+    brStocksCrud, fiisCrud, intlStocksCrud, fixedIncomeCrud,
+    fiEtfsCrud, cashAccountsCrud, realAssetsCrud,
     accumulationHistory,
     exchangeRate,
     allocation,
@@ -410,6 +419,7 @@ export function AppProvider({ children }) {
     benchmarks,
     marketDataStatus,
     resetData,
+    b3Import,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

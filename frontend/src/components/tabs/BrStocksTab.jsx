@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { toSnakeCase } from '../../utils/apiHelpers';
 import {
   grahamFairPrice,
   bazinFairPrice,
@@ -73,7 +74,8 @@ const EMPTY_FII = {
 };
 
 function BrStocksTab() {
-  const { brStocks, setBrStocks, fiis, setFiis, currency, exchangeRate, brokerFilter } = useApp();
+  const { brStocks, setBrStocks, fiis, setFiis, currency, exchangeRate, brokerFilter,
+    createTransaction, brStocksCrud, fiisCrud } = useApp();
 
   const [showStocks, setShowStocks] = useState(true);
   const [showFiis, setShowFiis] = useState(true);
@@ -114,7 +116,7 @@ function BrStocksTab() {
     setStockModalOpen(true);
   }
 
-  function handleSaveStock() {
+  async function handleSaveStock() {
     const parsed = {
       ticker: stockForm.ticker.toUpperCase().trim(),
       name: stockForm.name.trim(),
@@ -131,16 +133,64 @@ function BrStocksTab() {
       broker: stockForm.broker.trim(),
     };
     if (!parsed.ticker) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editingStock) {
+      const oldQty = editingStock.qty || 0;
+      const newQty = parsed.qty;
+      const delta = newQty - oldQty;
+      // Update metadata via CRUD
       setBrStocks((prev) => prev.map((s) => (s.ticker === editingStock.ticker ? parsed : s)));
+      // Create transaction for position change
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'compra' : 'venda',
+          assetClass: 'br_stock',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: Math.abs(delta),
+          unitPrice: parsed.avgPrice,
+          broker: parsed.broker,
+          notes: 'Ajuste via aba RV Brasil',
+        });
+      }
     } else {
-      setBrStocks((prev) => [...prev, parsed]);
+      // Create asset with zero position first, then transaction for initial qty
+      const assetData = { ...parsed, qty: 0, avgPrice: 0 };
+      await brStocksCrud.create.mutateAsync(toSnakeCase(assetData, 'brStock'));
+      if (parsed.qty > 0) {
+        await createTransaction({
+          date: today,
+          operationType: 'compra',
+          assetClass: 'br_stock',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: parsed.qty,
+          unitPrice: parsed.avgPrice,
+          broker: parsed.broker,
+          notes: 'Posicao inicial via aba RV Brasil',
+        });
+      }
     }
     setStockModalOpen(false);
   }
 
-  function handleDeleteStock() {
+  async function handleDeleteStock() {
     if (!editingStock) return;
+    if ((editingStock.qty || 0) > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: 'venda',
+        assetClass: 'br_stock',
+        ticker: editingStock.ticker,
+        assetName: editingStock.name,
+        qty: editingStock.qty,
+        unitPrice: editingStock.currentPrice || editingStock.avgPrice,
+        broker: editingStock.broker,
+        notes: 'Encerramento de posicao via aba RV Brasil',
+      });
+    }
     setBrStocks((prev) => prev.filter((s) => s.ticker !== editingStock.ticker));
     setStockModalOpen(false);
   }
@@ -170,7 +220,7 @@ function BrStocksTab() {
     setFiiModalOpen(true);
   }
 
-  function handleSaveFii() {
+  async function handleSaveFii() {
     const parsed = {
       ticker: fiiForm.ticker.toUpperCase().trim(),
       name: fiiForm.name.trim(),
@@ -184,16 +234,61 @@ function BrStocksTab() {
       broker: fiiForm.broker.trim(),
     };
     if (!parsed.ticker) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editingFii) {
+      const oldQty = editingFii.qty || 0;
+      const newQty = parsed.qty;
+      const delta = newQty - oldQty;
       setFiis((prev) => prev.map((f) => (f.ticker === editingFii.ticker ? parsed : f)));
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'compra' : 'venda',
+          assetClass: 'fii',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: Math.abs(delta),
+          unitPrice: parsed.avgPrice,
+          broker: parsed.broker,
+          notes: 'Ajuste via aba RV Brasil',
+        });
+      }
     } else {
-      setFiis((prev) => [...prev, parsed]);
+      const assetData = { ...parsed, qty: 0, avgPrice: 0 };
+      await fiisCrud.create.mutateAsync(toSnakeCase(assetData, 'fii'));
+      if (parsed.qty > 0) {
+        await createTransaction({
+          date: today,
+          operationType: 'compra',
+          assetClass: 'fii',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: parsed.qty,
+          unitPrice: parsed.avgPrice,
+          broker: parsed.broker,
+          notes: 'Posicao inicial via aba RV Brasil',
+        });
+      }
     }
     setFiiModalOpen(false);
   }
 
-  function handleDeleteFii() {
+  async function handleDeleteFii() {
     if (!editingFii) return;
+    if ((editingFii.qty || 0) > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: 'venda',
+        assetClass: 'fii',
+        ticker: editingFii.ticker,
+        assetName: editingFii.name,
+        qty: editingFii.qty,
+        unitPrice: editingFii.currentPrice || editingFii.avgPrice,
+        broker: editingFii.broker,
+        notes: 'Encerramento de posicao via aba RV Brasil',
+      });
+    }
     setFiis((prev) => prev.filter((f) => f.ticker !== editingFii.ticker));
     setFiiModalOpen(false);
   }

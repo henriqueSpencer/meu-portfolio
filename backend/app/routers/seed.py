@@ -6,13 +6,14 @@ from ..database import get_db
 from ..models import (
     BrStock, Fii, IntlStock, FixedIncome, RealAsset,
     Dividend, WatchlistItem, AllocationTarget, AccumulationGoal,
-    PatrimonialHistory, FiEtf, CashAccount,
+    PatrimonialHistory, FiEtf, CashAccount, Transaction,
 )
+from ..routers.transactions import _apply
 from ..seed.seed_data import (
     BR_STOCKS, FIIS, INTL_STOCKS, FIXED_INCOME, REAL_ASSETS,
     DIVIDENDS, WATCHLIST, ALLOCATION_TARGETS, ACCUMULATION_GOALS,
     PATRIMONIAL_HISTORY, BENCHMARKS, ACCUMULATION_HISTORY,
-    FI_ETFS, CASH_ACCOUNTS,
+    FI_ETFS, CASH_ACCOUNTS, TRANSACTIONS, FIXED_INCOME_ADJUSTMENTS,
 )
 
 router = APIRouter(prefix="/api/seed", tags=["seed"])
@@ -24,6 +25,7 @@ async def _is_empty(db: AsyncSession) -> bool:
 
 
 async def run_seed(db: AsyncSession):
+    # Seed assets (all with zero positions)
     for row in BR_STOCKS:
         db.add(BrStock(**row))
     for row in FIIS:
@@ -48,6 +50,23 @@ async def run_seed(db: AsyncSession):
         db.add(CashAccount(**row))
     for row in PATRIMONIAL_HISTORY:
         db.add(PatrimonialHistory(**row))
+
+    # Flush so assets exist before transactions reference them
+    await db.flush()
+
+    # Seed transactions and apply position changes
+    for row in TRANSACTIONS:
+        tx = Transaction(**row)
+        db.add(tx)
+        await _apply(db, tx)
+
+    # Post-transaction adjustments (fixed income current_value includes yield)
+    for fi_id, adjustments in FIXED_INCOME_ADJUSTMENTS.items():
+        asset = await db.get(FixedIncome, fi_id)
+        if asset:
+            for field, value in adjustments.items():
+                setattr(asset, field, value)
+
     await db.commit()
 
 

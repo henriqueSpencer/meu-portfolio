@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { toSnakeCase } from '../../utils/apiHelpers';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { Home, Car, Package, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
 import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
@@ -47,7 +48,8 @@ const EMPTY_ASSET = {
 };
 
 export default function RealAssetsTab() {
-  const { realAssets, setRealAssets, currency, exchangeRate } = useApp();
+  const { realAssets, setRealAssets, currency, exchangeRate,
+    createTransaction, realAssetsCrud } = useApp();
 
   // ---- CRUD state ----
   const [modalOpen, setModalOpen] = useState(false);
@@ -72,7 +74,7 @@ export default function RealAssetsTab() {
     setModalOpen(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const parsed = {
       id: editing ? editing.id : String(Date.now()),
       description: form.description.trim(),
@@ -82,16 +84,55 @@ export default function RealAssetsTab() {
       includeInTotal: form.includeInTotal,
     };
     if (!parsed.description) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editing) {
+      const oldVal = editing.estimatedValue || 0;
+      const newVal = parsed.estimatedValue;
+      const delta = newVal - oldVal;
       setRealAssets((prev) => prev.map((a) => (a.id === editing.id ? parsed : a)));
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'compra' : 'venda',
+          assetClass: 'real_asset',
+          assetId: parsed.id,
+          assetName: parsed.description,
+          totalValue: Math.abs(delta),
+          notes: 'Ajuste via aba Imobilizado',
+        });
+      }
     } else {
-      setRealAssets((prev) => [...prev, parsed]);
+      const assetData = { ...parsed, estimatedValue: 0 };
+      await realAssetsCrud.create.mutateAsync(toSnakeCase(assetData, 'realAsset'));
+      if (parsed.estimatedValue > 0) {
+        await createTransaction({
+          date: today,
+          operationType: 'compra',
+          assetClass: 'real_asset',
+          assetId: parsed.id,
+          assetName: parsed.description,
+          totalValue: parsed.estimatedValue,
+          notes: 'Posicao inicial via aba Imobilizado',
+        });
+      }
     }
     setModalOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!editing) return;
+    if ((editing.estimatedValue || 0) > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: 'venda',
+        assetClass: 'real_asset',
+        assetId: editing.id,
+        assetName: editing.description,
+        totalValue: editing.estimatedValue,
+        notes: 'Encerramento via aba Imobilizado',
+      });
+    }
     setRealAssets((prev) => prev.filter((a) => a.id !== editing.id));
     setModalOpen(false);
   }

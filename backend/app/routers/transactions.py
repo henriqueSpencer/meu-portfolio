@@ -9,7 +9,9 @@ from ..models.fii import Fii
 from ..models.intl_stock import IntlStock
 from ..models.fixed_income import FixedIncome
 from ..models.real_asset import RealAsset
-from ..schemas.transaction import TransactionCreate, TransactionRead
+from ..models.fi_etf import FiEtf
+from ..models.cash_account import CashAccount
+from ..schemas.transaction import TransactionCreate, TransactionRead, TransactionUpdate
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -24,6 +26,18 @@ MODEL_MAP = {
     "intl_stock": (IntlStock, "ticker"),
     "fixed_income": (FixedIncome, "id"),
     "real_asset": (RealAsset, "id"),
+    "fi_etf": (FiEtf, "ticker"),
+    "cash_account": (CashAccount, "id"),
+}
+
+VALID_OPS = {
+    "br_stock": {"compra", "venda", "transferencia", "desdobramento", "bonificacao"},
+    "fii": {"compra", "venda", "transferencia", "desdobramento", "bonificacao"},
+    "intl_stock": {"compra", "venda", "transferencia", "desdobramento", "bonificacao"},
+    "fixed_income": {"aporte", "resgate", "transferencia"},
+    "real_asset": {"compra", "venda"},
+    "fi_etf": {"compra", "venda", "transferencia", "desdobramento", "bonificacao"},
+    "cash_account": {"aporte", "resgate", "transferencia"},
 }
 
 
@@ -54,7 +68,7 @@ async def _apply(db: AsyncSession, tx):
     op = tx.operation_type
     cls = tx.asset_class
 
-    if cls in ("br_stock", "fii"):
+    if cls in ("br_stock", "fii", "fi_etf"):
         if op == "compra":
             old_qty = asset.qty or 0
             old_avg = asset.avg_price or 0
@@ -124,6 +138,15 @@ async def _apply(db: AsyncSession, tx):
         elif op == "venda":
             asset.estimated_value = (asset.estimated_value or 0) - (tx.total_value or 0)
 
+    elif cls == "cash_account":
+        if op == "aporte":
+            asset.balance = (asset.balance or 0) + (tx.total_value or 0)
+        elif op == "resgate":
+            asset.balance = (asset.balance or 0) - (tx.total_value or 0)
+        elif op == "transferencia":
+            if tx.broker_destination:
+                asset.institution = tx.broker_destination
+
 
 async def _revert(db: AsyncSession, tx):
     """Revert a transaction's effect (inverse of _apply)."""
@@ -134,7 +157,7 @@ async def _revert(db: AsyncSession, tx):
     op = tx.operation_type
     cls = tx.asset_class
 
-    if cls in ("br_stock", "fii"):
+    if cls in ("br_stock", "fii", "fi_etf"):
         if op == "compra":
             cur_qty = asset.qty or 0
             cur_avg = asset.avg_price or 0
@@ -208,6 +231,15 @@ async def _revert(db: AsyncSession, tx):
         elif op == "venda":
             asset.estimated_value = (asset.estimated_value or 0) + (tx.total_value or 0)
 
+    elif cls == "cash_account":
+        if op == "aporte":
+            asset.balance = (asset.balance or 0) - (tx.total_value or 0)
+        elif op == "resgate":
+            asset.balance = (asset.balance or 0) + (tx.total_value or 0)
+        elif op == "transferencia":
+            if tx.broker:
+                asset.institution = tx.broker
+
 
 # ---------------------------------------------------------------------------
 # CRUD endpoints
@@ -221,6 +253,9 @@ async def list_transactions(db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=TransactionRead, status_code=201)
 async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends(get_db)):
+    valid = VALID_OPS.get(data.asset_class)
+    if valid and data.operation_type not in valid:
+        raise HTTPException(422, f"Invalid operation '{data.operation_type}' for {data.asset_class}")
     obj = Transaction(**data.model_dump())
     db.add(obj)
     await _apply(db, obj)
@@ -234,6 +269,32 @@ async def get_transaction(transaction_id: int, db: AsyncSession = Depends(get_db
     obj = await db.get(Transaction, transaction_id)
     if not obj:
         raise HTTPException(404, f"Transaction {transaction_id} not found")
+    return obj
+
+
+@router.put("/{transaction_id}", response_model=TransactionRead)
+async def update_transaction(
+    transaction_id: int,
+    data: TransactionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    obj = await db.get(Transaction, transaction_id)
+    if not obj:
+        raise HTTPException(404, f"Transaction {transaction_id} not found")
+    # Revert the old state
+    await _revert(db, obj)
+    # Apply updates
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(obj, field, value)
+    # Validate operation
+    valid = VALID_OPS.get(obj.asset_class)
+    if valid and obj.operation_type not in valid:
+        raise HTTPException(422, f"Invalid operation '{obj.operation_type}' for {obj.asset_class}")
+    # Apply new state
+    await _apply(db, obj)
+    await db.commit()
+    await db.refresh(obj)
     return obj
 
 

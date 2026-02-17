@@ -286,17 +286,21 @@ export function buildQuotaHistory(bonds, historicalData) {
 
   const cdiSeries = historicalData['12'] || [];
   const selicSeries = historicalData['11'] || [];
-  // Fallback to Selic if CDI is unavailable (they track closely)
+  const ipcaSeries = historicalData['433'] || [];
   const rateSeries = cdiSeries.length ? cdiSeries : selicSeries;
   if (!rateSeries.length) return [];
 
-  // Build a date->rate map for daily iteration
+  // Date->rate maps
   const cdiByDate = new Map();
-  for (const entry of rateSeries) {
-    cdiByDate.set(entry.date, entry.value);
-  }
+  for (const entry of cdiSeries) cdiByDate.set(entry.date, entry.value);
 
-  // Get all BCB dates sorted
+  const selicByDate = new Map();
+  for (const entry of selicSeries) selicByDate.set(entry.date, entry.value);
+
+  // IPCA: map BCB date string -> monthly value
+  const ipcaByDate = new Map();
+  for (const entry of ipcaSeries) ipcaByDate.set(entry.date, entry.value);
+
   const allDates = rateSeries.map((e) => e.date);
   if (!allDates.length) return [];
 
@@ -308,10 +312,11 @@ export function buildQuotaHistory(bonds, historicalData) {
   if (!appDates.length) return [];
 
   const startDate = appDates[0];
-  const INITIAL_QUOTA_VALUE = 1000; // initial quota value in R$
+  const INITIAL_QUOTA_VALUE = 1000;
 
   let totalQuotas = 0;
   const bondQuotas = {}; // bondId -> quotas assigned
+  const bondValues = {}; // bondId -> current accumulated value
 
   const history = [];
   let currentQuotaValue = INITIAL_QUOTA_VALUE;
@@ -324,39 +329,79 @@ export function buildQuotaHistory(bonds, historicalData) {
 
     // Check if any bonds start on this date -> assign quotas
     for (const bond of bonds) {
-      if (bondQuotas[bond.id]) continue; // already has quotas
+      if (bondQuotas[bond.id] != null) continue;
       const bondAppDate = parseIsoDate(bond.applicationDate);
       if (!bondAppDate) continue;
-      if (isoDate === toIsoString(bondAppDate) || (date >= bondAppDate && !bondQuotas[bond.id])) {
-        const quotasForBond = bond.appliedValue / currentQuotaValue;
-        bondQuotas[bond.id] = quotasForBond;
-        totalQuotas += quotasForBond;
+      if (date >= bondAppDate) {
+        bondQuotas[bond.id] = bond.appliedValue / currentQuotaValue;
+        totalQuotas += bondQuotas[bond.id];
+        bondValues[bond.id] = bond.appliedValue;
       }
     }
 
     if (totalQuotas === 0) continue;
 
-    // Calculate total portfolio value at this date using accumulated CDI
-    // (simplified: use CDI as proxy for all bond types in quota history)
-    let totalValue = 0;
+    // Total value BEFORE applying today's returns
+    let totalBefore = 0;
     for (const bond of bonds) {
-      if (!bondQuotas[bond.id]) continue;
-      // Simple: each bond's value = its quota share * current quota value
-      // We update quota value based on CDI return for the day
+      if (bondValues[bond.id] == null) continue;
+      totalBefore += bondValues[bond.id];
     }
 
-    // Apply daily CDI return to update quota value
+    // Apply each bond's daily return based on its indexer and contracted rate
     const dailyCdi = cdiByDate.get(dateStr);
-    if (dailyCdi != null) {
-      currentQuotaValue *= 1 + dailyCdi / 100;
+    const dailySelic = selicByDate.get(dateStr);
+    const monthlyIpca = ipcaByDate.get(dateStr);
+
+    for (const bond of bonds) {
+      if (bondValues[bond.id] == null) continue;
+      const pct = (bond.contractedRate || 100) / 100;
+
+      switch (bond.indexer) {
+        case 'CDI':
+          if (dailyCdi != null) bondValues[bond.id] *= 1 + (dailyCdi / 100) * pct;
+          break;
+        case 'Selic':
+          if (dailySelic != null) bondValues[bond.id] *= 1 + (dailySelic / 100) * pct;
+          break;
+        case 'IPCA': {
+          // Daily spread component
+          const dailySpread = Math.pow(1 + (bond.contractedRate || 0) / 100, 1 / 252) - 1;
+          bondValues[bond.id] *= 1 + dailySpread;
+          // Monthly IPCA component (applied on IPCA entry dates)
+          if (monthlyIpca != null) {
+            bondValues[bond.id] *= 1 + monthlyIpca / 100;
+          }
+          break;
+        }
+        case 'Prefixado': {
+          const dailyRate = Math.pow(1 + (bond.contractedRate || 0) / 100, 1 / 252) - 1;
+          bondValues[bond.id] *= 1 + dailyRate;
+          break;
+        }
+        default:
+          // Fallback: use CDI at 100%
+          if (dailyCdi != null) bondValues[bond.id] *= 1 + dailyCdi / 100;
+          break;
+      }
     }
 
-    totalValue = totalQuotas * currentQuotaValue;
+    // Total value AFTER applying returns
+    let totalAfter = 0;
+    for (const bond of bonds) {
+      if (bondValues[bond.id] == null) continue;
+      totalAfter += bondValues[bond.id];
+    }
+
+    // Update quota value by the portfolio's weighted return
+    if (totalBefore > 0) {
+      currentQuotaValue *= totalAfter / totalBefore;
+    }
 
     history.push({
       date: isoDate,
       quotaValue: currentQuotaValue,
-      totalValue,
+      totalValue: totalQuotas * currentQuotaValue,
       totalQuotas,
     });
   }

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { toSnakeCase } from '../../utils/apiHelpers';
 import {
   grahamFairPrice,
   bazinFairPrice,
@@ -73,7 +74,8 @@ const EMPTY_INTL = {
 };
 
 function IntlStocksTab() {
-  const { intlStocks, setIntlStocks, currency, exchangeRate, brokerFilter } = useApp();
+  const { intlStocks, setIntlStocks, currency, exchangeRate, brokerFilter,
+    createTransaction, intlStocksCrud } = useApp();
 
   // Local display-currency toggle (independent from global `currency`)
   const [displayCurrency, setDisplayCurrency] = useState('USD');
@@ -108,7 +110,7 @@ function IntlStocksTab() {
     setModalOpen(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const parsed = {
       ticker: form.ticker.toUpperCase().trim(),
       name: form.name.trim(),
@@ -126,16 +128,61 @@ function IntlStocksTab() {
       broker: form.broker.trim(),
     };
     if (!parsed.ticker) return;
+    const today = new Date().toISOString().slice(0, 10);
     if (editing) {
+      const oldQty = editing.qty || 0;
+      const newQty = parsed.qty;
+      const delta = newQty - oldQty;
       setIntlStocks((prev) => prev.map((s) => (s.ticker === editing.ticker ? parsed : s)));
+      if (delta !== 0) {
+        await createTransaction({
+          date: today,
+          operationType: delta > 0 ? 'compra' : 'venda',
+          assetClass: 'intl_stock',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: Math.abs(delta),
+          unitPrice: parsed.avgPriceUsd,
+          broker: parsed.broker,
+          notes: 'Ajuste via aba RV Exterior',
+        });
+      }
     } else {
-      setIntlStocks((prev) => [...prev, parsed]);
+      const assetData = { ...parsed, qty: 0, avgPriceUsd: 0 };
+      await intlStocksCrud.create.mutateAsync(toSnakeCase(assetData, 'intlStock'));
+      if (parsed.qty > 0) {
+        await createTransaction({
+          date: today,
+          operationType: 'compra',
+          assetClass: 'intl_stock',
+          ticker: parsed.ticker,
+          assetName: parsed.name,
+          qty: parsed.qty,
+          unitPrice: parsed.avgPriceUsd,
+          broker: parsed.broker,
+          notes: 'Posicao inicial via aba RV Exterior',
+        });
+      }
     }
     setModalOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!editing) return;
+    if ((editing.qty || 0) > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await createTransaction({
+        date: today,
+        operationType: 'venda',
+        assetClass: 'intl_stock',
+        ticker: editing.ticker,
+        assetName: editing.name,
+        qty: editing.qty,
+        unitPrice: editing.currentPriceUsd || editing.avgPriceUsd,
+        broker: editing.broker,
+        notes: 'Encerramento de posicao via aba RV Exterior',
+      });
+    }
     setIntlStocks((prev) => prev.filter((s) => s.ticker !== editing.ticker));
     setModalOpen(false);
   }

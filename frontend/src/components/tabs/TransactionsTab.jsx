@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
 import {
@@ -19,7 +19,11 @@ import {
   SplitSquareHorizontal,
   Gift,
   X,
+  Pencil,
+  FileSpreadsheet,
+  Loader2,
 } from 'lucide-react';
+import ImportPreviewModal from '../ImportPreviewModal';
 
 const GLASS =
   'rounded-xl border border-white/10 bg-white/5 backdrop-blur-md';
@@ -43,6 +47,8 @@ const ASSET_CLASSES = [
   { value: 'fii', label: 'FII' },
   { value: 'intl_stock', label: 'Acao Intl' },
   { value: 'fixed_income', label: 'Renda Fixa' },
+  { value: 'fi_etf', label: 'ETF Renda Fixa' },
+  { value: 'cash_account', label: 'Conta Caixa' },
   { value: 'real_asset', label: 'Imobilizado' },
 ];
 
@@ -51,6 +57,8 @@ const VALID_OPS = {
   fii: ['compra', 'venda', 'transferencia', 'desdobramento', 'bonificacao'],
   intl_stock: ['compra', 'venda', 'transferencia', 'desdobramento', 'bonificacao'],
   fixed_income: ['aporte', 'resgate', 'transferencia'],
+  fi_etf: ['compra', 'venda', 'transferencia', 'desdobramento', 'bonificacao'],
+  cash_account: ['aporte', 'resgate', 'transferencia'],
   real_asset: ['compra', 'venda'],
 };
 
@@ -79,6 +87,8 @@ const CLASS_LABEL = {
   fii: 'FII',
   intl_stock: 'Acao Intl',
   fixed_income: 'Renda Fixa',
+  fi_etf: 'ETF RF',
+  cash_account: 'Caixa',
   real_asset: 'Imobilizado',
 };
 
@@ -114,15 +124,45 @@ export default function TransactionsTab() {
     fiis,
     intlStocks,
     fixedIncome,
+    fiEtfs,
+    cashAccounts,
     realAssets,
     currency,
     exchangeRate,
+    b3Import,
   } = useApp();
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [editingTx, setEditingTx] = useState(null);
   const [filterOp, setFilterOp] = useState('');
   const [filterClass, setFilterClass] = useState('');
+
+  // B3 Import state
+  const fileInputRef = useRef(null);
+  const [importPreview, setImportPreview] = useState(null);
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await b3Import.preview.mutateAsync(file);
+      setImportPreview(result);
+    } catch (err) {
+      alert(`Erro ao processar arquivo: ${err.message}`);
+    }
+    // Reset file input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleImportConfirm = async (selectedRows) => {
+    try {
+      await b3Import.confirm.mutateAsync(selectedRows);
+      setImportPreview(null);
+    } catch (err) {
+      alert(`Erro ao importar: ${err.message}`);
+    }
+  };
 
   // ---- Available assets for dropdown based on selected class ----
   const availableAssets = useMemo(() => {
@@ -135,12 +175,16 @@ export default function TransactionsTab() {
         return intlStocks.map(s => ({ key: s.ticker, label: `${s.ticker} - ${s.name}`, broker: s.broker }));
       case 'fixed_income':
         return fixedIncome.map(f => ({ key: f.id, label: f.title, broker: f.broker }));
+      case 'fi_etf':
+        return fiEtfs.map(e => ({ key: e.ticker, label: `${e.ticker} - ${e.name}`, broker: e.broker }));
+      case 'cash_account':
+        return cashAccounts.map(a => ({ key: a.id, label: `${a.name} (${a.institution})`, broker: a.institution }));
       case 'real_asset':
         return realAssets.map(r => ({ key: r.id, label: r.description, broker: '' }));
       default:
         return [];
     }
-  }, [form.assetClass, brStocks, fiis, intlStocks, fixedIncome, realAssets]);
+  }, [form.assetClass, brStocks, fiis, intlStocks, fixedIncome, fiEtfs, cashAccounts, realAssets]);
 
   // ---- Allowed operations for selected asset class ----
   const allowedOps = useMemo(() => {
@@ -150,7 +194,7 @@ export default function TransactionsTab() {
   }, [form.assetClass]);
 
   // ---- Whether to show qty/unitPrice vs totalValue ----
-  const usesQtyPrice = ['br_stock', 'fii', 'intl_stock'].includes(form.assetClass);
+  const usesQtyPrice = ['br_stock', 'fii', 'intl_stock', 'fi_etf'].includes(form.assetClass);
   const isTransfer = form.operationType === 'transferencia';
   const isSplit = form.operationType === 'desdobramento';
 
@@ -172,14 +216,40 @@ export default function TransactionsTab() {
   const handleAssetSelect = (key) => {
     const asset = availableAssets.find(a => a.key === key);
     if (!asset) return;
-    const isTicker = ['br_stock', 'fii', 'intl_stock'].includes(form.assetClass);
+    const isTicker = ['br_stock', 'fii', 'intl_stock', 'fi_etf'].includes(form.assetClass);
     setForm(prev => ({
       ...prev,
       ticker: isTicker ? key : '',
-      assetId: isTicker ? '' : key,
+      assetId: isTicker ? '' : String(key),
       assetName: asset.label.split(' - ').slice(-1)[0] || asset.label,
       broker: asset.broker || prev.broker,
     }));
+  };
+
+  const handleEdit = (tx) => {
+    setEditingTx(tx);
+    setForm({
+      date: tx.date,
+      operationType: tx.operationType,
+      assetClass: tx.assetClass,
+      ticker: tx.ticker || '',
+      assetId: tx.assetId || '',
+      assetName: tx.assetName || '',
+      qty: tx.qty != null ? String(tx.qty) : '',
+      unitPrice: tx.unitPrice != null ? String(tx.unitPrice) : '',
+      totalValue: tx.totalValue != null ? String(tx.totalValue) : '',
+      broker: tx.broker || '',
+      brokerDestination: tx.brokerDestination || '',
+      fees: tx.fees ? String(tx.fees) : '',
+      notes: tx.notes || '',
+    });
+    setShowForm(true);
+  };
+
+  const handleCancelForm = () => {
+    setEditingTx(null);
+    setForm(EMPTY_FORM);
+    setShowForm(false);
   };
 
   const handleSubmit = (e) => {
@@ -191,7 +261,12 @@ export default function TransactionsTab() {
       totalValue: form.totalValue ? parseFloat(form.totalValue) : null,
       fees: form.fees ? parseFloat(form.fees) : 0,
     }, 'transaction');
-    transactionsCrud.create.mutate(payload);
+    if (editingTx) {
+      transactionsCrud.update.mutate({ id: editingTx.id, data: payload });
+    } else {
+      transactionsCrud.create.mutate(payload);
+    }
+    setEditingTx(null);
     setForm(EMPTY_FORM);
     setShowForm(false);
   };
@@ -236,13 +311,42 @@ export default function TransactionsTab() {
             <p className="text-xs text-slate-500">Registro de movimentacoes</p>
           </div>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
-        >
-          {showForm ? <X size={16} /> : <Plus size={16} />}
-          {showForm ? 'Cancelar' : 'Novo Lancamento'}
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={b3Import.preview.isPending}
+            className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-400 transition hover:bg-cyan-500/20 disabled:opacity-50"
+          >
+            {b3Import.preview.isPending ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <FileSpreadsheet size={16} />
+            )}
+            Importar B3
+          </button>
+          <button
+            onClick={() => {
+              if (showForm) {
+                handleCancelForm();
+              } else {
+                setEditingTx(null);
+                setForm(EMPTY_FORM);
+                setShowForm(true);
+              }
+            }}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+          >
+            {showForm ? <X size={16} /> : <Plus size={16} />}
+            {showForm ? 'Cancelar' : 'Novo Lancamento'}
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -264,7 +368,9 @@ export default function TransactionsTab() {
       {/* Form */}
       {showForm && (
         <form onSubmit={handleSubmit} className={`${GLASS} p-6 space-y-4`}>
-          <h3 className="text-sm font-medium uppercase tracking-wider text-slate-400 mb-2">Novo Lancamento</h3>
+          <h3 className="text-sm font-medium uppercase tracking-wider text-slate-400 mb-2">
+            {editingTx ? `Editar Lancamento #${editingTx.id}` : 'Novo Lancamento'}
+          </h3>
 
           {/* Row 1: Asset Class + Operation Type */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -435,10 +541,12 @@ export default function TransactionsTab() {
           <div className="flex justify-end pt-2">
             <button
               type="submit"
-              disabled={transactionsCrud.create.isPending}
+              disabled={transactionsCrud.create.isPending || transactionsCrud.update.isPending}
               className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
             >
-              {transactionsCrud.create.isPending ? 'Salvando...' : 'Registrar Lancamento'}
+              {(transactionsCrud.create.isPending || transactionsCrud.update.isPending)
+                ? 'Salvando...'
+                : editingTx ? 'Salvar Alteracoes' : 'Registrar Lancamento'}
             </button>
           </div>
         </form>
@@ -547,13 +655,22 @@ export default function TransactionsTab() {
                       {t.notes || '-'}
                     </td>
                     <td className="px-5 py-3 text-center">
-                      <button
-                        onClick={() => handleDelete(t.id)}
-                        className="rounded p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
-                        title="Excluir lancamento"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleEdit(t)}
+                          className="rounded p-1 text-slate-500 transition hover:bg-indigo-500/10 hover:text-indigo-400"
+                          title="Editar lancamento"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(t.id)}
+                          className="rounded p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
+                          title="Excluir lancamento"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -569,6 +686,16 @@ export default function TransactionsTab() {
           </table>
         </div>
       </div>
+
+      {/* B3 Import Preview Modal */}
+      {importPreview && (
+        <ImportPreviewModal
+          data={importPreview}
+          onConfirm={handleImportConfirm}
+          onClose={() => setImportPreview(null)}
+          isConfirming={b3Import.confirm.isPending}
+        />
+      )}
     </section>
   );
 }
