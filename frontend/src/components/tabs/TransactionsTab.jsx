@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
 import {
@@ -27,6 +27,8 @@ import {
   Upload,
   RotateCcw,
   RefreshCw,
+  ChevronDown,
+  FileDown,
 } from 'lucide-react';
 import ImportPreviewModal from '../ImportPreviewModal';
 import BackupPreviewModal from '../BackupPreviewModal';
@@ -157,6 +159,21 @@ export default function TransactionsTab() {
   // Backup Import state
   const backupFileInputRef = useRef(null);
   const [backupPreview, setBackupPreview] = useState(null);
+
+  // Template dropdown
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const templateMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showTemplateMenu) return;
+    const handleClick = (e) => {
+      if (templateMenuRef.current && !templateMenuRef.current.contains(e.target)) {
+        setShowTemplateMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showTemplateMenu]);
 
   // Reset confirmation modal
   const [showResetModal, setShowResetModal] = useState(false);
@@ -405,6 +422,49 @@ export default function TransactionsTab() {
             onChange={handleBackupFile}
             className="hidden"
           />
+          {/* Template download dropdown */}
+          <div className="relative" ref={templateMenuRef}>
+            <button
+              onClick={() => setShowTemplateMenu((v) => !v)}
+              className="flex items-center gap-2 rounded-lg border border-slate-500/30 bg-slate-500/10 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-500/20"
+              title="Baixar templates de importacao"
+            >
+              <FileDown size={16} />
+              Templates
+              <ChevronDown size={14} className={`transition-transform ${showTemplateMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {showTemplateMenu && (
+              <div className="absolute right-0 z-50 mt-1 w-56 rounded-lg border border-white/10 bg-slate-800 py-1 shadow-xl">
+                <a
+                  href="/api/import/templates/negociacao"
+                  download
+                  onClick={() => setShowTemplateMenu(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 transition"
+                >
+                  <Download size={14} className="text-cyan-400 shrink-0" />
+                  Negociacao B3
+                </a>
+                <a
+                  href="/api/import/templates/movimentacao"
+                  download
+                  onClick={() => setShowTemplateMenu(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 transition"
+                >
+                  <Download size={14} className="text-cyan-400 shrink-0" />
+                  Movimentacao B3
+                </a>
+                <a
+                  href="/api/import/templates/backup"
+                  download
+                  onClick={() => setShowTemplateMenu(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 transition"
+                >
+                  <Download size={14} className="text-indigo-400 shrink-0" />
+                  Backup
+                </a>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowResetModal(true)}
             disabled={transactions.length === 0}
