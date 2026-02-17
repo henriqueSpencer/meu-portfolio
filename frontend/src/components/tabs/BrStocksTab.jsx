@@ -12,7 +12,7 @@ import {
 } from '../../utils/calculations';
 import { formatBRL, formatCurrency, formatPct, colorClass } from '../../utils/formatters';
 import { SECTOR_COLORS } from '../../data/mockData';
-import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
+import FormModal, { FormField, FormInput } from '../FormModal';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,13 +64,12 @@ function PieTooltipContent({ active, payload }) {
 // ---------------------------------------------------------------------------
 
 const EMPTY_STOCK = {
-  ticker: '', name: '', sector: '', qty: '', avgPrice: '', currentPrice: '',
-  lpa: '', vpa: '', dividends5y: '', fairPriceManual: '', broker: '',
+  ticker: '', name: '', sector: '', qty: '', avgPrice: '',
+  fairPriceManual: '', broker: '',
 };
 
 const EMPTY_FII = {
-  ticker: '', name: '', sector: '', qty: '', avgPrice: '', currentPrice: '',
-  pvp: '', dy12m: '', lastDividend: '', broker: '',
+  ticker: '', name: '', sector: '', qty: '', avgPrice: '', broker: '',
 };
 
 function BrStocksTab() {
@@ -106,10 +105,6 @@ function BrStocksTab() {
       sector: stock.sector,
       qty: String(stock.qty),
       avgPrice: String(stock.avgPrice),
-      currentPrice: String(stock.currentPrice),
-      lpa: String(stock.lpa ?? ''),
-      vpa: String(stock.vpa ?? ''),
-      dividends5y: Array.isArray(stock.dividends5y) ? stock.dividends5y.join(', ') : '',
       fairPriceManual: stock.fairPriceManual ? String(stock.fairPriceManual) : '',
       broker: stock.broker || '',
     });
@@ -123,12 +118,10 @@ function BrStocksTab() {
       sector: stockForm.sector.trim(),
       qty: Number(stockForm.qty) || 0,
       avgPrice: Number(stockForm.avgPrice) || 0,
-      currentPrice: Number(stockForm.currentPrice) || 0,
-      lpa: stockForm.lpa !== '' ? Number(stockForm.lpa) : null,
-      vpa: stockForm.vpa !== '' ? Number(stockForm.vpa) : null,
-      dividends5y: stockForm.dividends5y
-        ? stockForm.dividends5y.split(',').map((v) => Number(v.trim())).filter((v) => !isNaN(v))
-        : [],
+      currentPrice: editingStock?.currentPrice ?? 0,
+      lpa: editingStock?.lpa ?? null,
+      vpa: editingStock?.vpa ?? null,
+      dividends5y: editingStock?.dividends5y ?? [],
       fairPriceManual: stockForm.fairPriceManual ? Number(stockForm.fairPriceManual) : null,
       broker: stockForm.broker.trim(),
     };
@@ -211,10 +204,6 @@ function BrStocksTab() {
       sector: fii.sector,
       qty: String(fii.qty),
       avgPrice: String(fii.avgPrice),
-      currentPrice: String(fii.currentPrice),
-      pvp: String(fii.pvp ?? ''),
-      dy12m: String(fii.dy12m ?? ''),
-      lastDividend: String(fii.lastDividend ?? ''),
       broker: fii.broker || '',
     });
     setFiiModalOpen(true);
@@ -227,10 +216,10 @@ function BrStocksTab() {
       sector: fiiForm.sector.trim(),
       qty: Number(fiiForm.qty) || 0,
       avgPrice: Number(fiiForm.avgPrice) || 0,
-      currentPrice: Number(fiiForm.currentPrice) || 0,
-      pvp: fiiForm.pvp !== '' ? Number(fiiForm.pvp) : 0,
-      dy12m: fiiForm.dy12m !== '' ? Number(fiiForm.dy12m) : 0,
-      lastDividend: fiiForm.lastDividend !== '' ? Number(fiiForm.lastDividend) : 0,
+      currentPrice: editingFii?.currentPrice ?? 0,
+      pvp: editingFii?.pvp ?? 0,
+      dy12m: editingFii?.dy12m ?? 0,
+      lastDividend: editingFii?.lastDividend ?? 0,
       broker: fiiForm.broker.trim(),
     };
     if (!parsed.ticker) return;
@@ -645,7 +634,7 @@ function BrStocksTab() {
                     P/VP
                   </th>
                   <th className="text-right text-slate-400 text-xs uppercase tracking-wider py-3 px-2 font-medium">
-                    DY 12m
+                    Div. Anual
                   </th>
                   <th className="text-right text-slate-400 text-xs uppercase tracking-wider py-3 px-2 font-medium">
                     Ult. Div.
@@ -718,8 +707,8 @@ function BrStocksTab() {
                     >
                       {row.pvp.toFixed(2).replace('.', ',')}
                     </td>
-                    <td className="py-3 px-2 text-sm text-emerald-400 text-right tabular-nums font-medium">
-                      {row.dy12m.toFixed(1).replace('.', ',')}%
+                    <td className="py-3 px-2 text-sm text-emerald-400 text-right tabular-nums font-medium whitespace-nowrap">
+                      {formatBRL(row.dy12m)}
                     </td>
                     <td className="py-3 px-2 text-sm text-slate-300 text-right tabular-nums whitespace-nowrap">
                       {formatBRL(row.lastDividend)}
@@ -854,28 +843,14 @@ function BrStocksTab() {
         <FormField label="Setor">
           <FormInput value={stockForm.sector} onChange={(e) => setStockForm((f) => ({ ...f, sector: e.target.value }))} placeholder="Petroleo e Gas" />
         </FormField>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <FormField label="Qtd">
             <FormInput type="number" value={stockForm.qty} onChange={(e) => setStockForm((f) => ({ ...f, qty: e.target.value }))} />
           </FormField>
           <FormField label="Preco Medio">
             <FormInput type="number" step="0.01" value={stockForm.avgPrice} onChange={(e) => setStockForm((f) => ({ ...f, avgPrice: e.target.value }))} />
           </FormField>
-          <FormField label="Preco Atual">
-            <FormInput type="number" step="0.01" value={stockForm.currentPrice} onChange={(e) => setStockForm((f) => ({ ...f, currentPrice: e.target.value }))} />
-          </FormField>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="LPA">
-            <FormInput type="number" step="0.01" value={stockForm.lpa} onChange={(e) => setStockForm((f) => ({ ...f, lpa: e.target.value }))} />
-          </FormField>
-          <FormField label="VPA">
-            <FormInput type="number" step="0.01" value={stockForm.vpa} onChange={(e) => setStockForm((f) => ({ ...f, vpa: e.target.value }))} />
-          </FormField>
-        </div>
-        <FormField label="Dividendos 5a (separados por virgula)">
-          <FormInput value={stockForm.dividends5y} onChange={(e) => setStockForm((f) => ({ ...f, dividends5y: e.target.value }))} placeholder="3.80, 4.20, 3.50, 5.10, 4.60" />
-        </FormField>
         <FormField label="Preco Justo Manual">
           <FormInput type="number" step="0.01" value={stockForm.fairPriceManual} onChange={(e) => setStockForm((f) => ({ ...f, fairPriceManual: e.target.value }))} />
         </FormField>
@@ -903,26 +878,12 @@ function BrStocksTab() {
         <FormField label="Setor">
           <FormInput value={fiiForm.sector} onChange={(e) => setFiiForm((f) => ({ ...f, sector: e.target.value }))} placeholder="Logistica" />
         </FormField>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <FormField label="Qtd">
             <FormInput type="number" value={fiiForm.qty} onChange={(e) => setFiiForm((f) => ({ ...f, qty: e.target.value }))} />
           </FormField>
           <FormField label="Preco Medio">
             <FormInput type="number" step="0.01" value={fiiForm.avgPrice} onChange={(e) => setFiiForm((f) => ({ ...f, avgPrice: e.target.value }))} />
-          </FormField>
-          <FormField label="Preco Atual">
-            <FormInput type="number" step="0.01" value={fiiForm.currentPrice} onChange={(e) => setFiiForm((f) => ({ ...f, currentPrice: e.target.value }))} />
-          </FormField>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <FormField label="P/VP">
-            <FormInput type="number" step="0.01" value={fiiForm.pvp} onChange={(e) => setFiiForm((f) => ({ ...f, pvp: e.target.value }))} />
-          </FormField>
-          <FormField label="DY 12m (%)">
-            <FormInput type="number" step="0.1" value={fiiForm.dy12m} onChange={(e) => setFiiForm((f) => ({ ...f, dy12m: e.target.value }))} />
-          </FormField>
-          <FormField label="Ult. Dividendo">
-            <FormInput type="number" step="0.01" value={fiiForm.lastDividend} onChange={(e) => setFiiForm((f) => ({ ...f, lastDividend: e.target.value }))} />
           </FormField>
         </div>
       </FormModal>

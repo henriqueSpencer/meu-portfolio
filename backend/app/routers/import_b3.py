@@ -19,6 +19,7 @@ from ..schemas.import_b3 import (
     ImportConfirmRequest,
     ImportConfirmResponse,
 )
+from ..services.yahoo import fetch_asset_info
 from .transactions import _apply
 
 router = APIRouter(prefix="/api/import/b3", tags=["import-b3"])
@@ -280,16 +281,34 @@ async def confirm_b3(
         "fi_etf": etf_tickers,
     }
 
+    # Pre-fetch sector info from Yahoo Finance for new tickers
+    new_tickers_to_lookup = set()
+    for row in sorted_rows:
+        ticker_set = asset_sets.get(row.asset_class, set())
+        if row.ticker not in ticker_set and row.asset_class in ("br_stock", "fii"):
+            new_tickers_to_lookup.add(row.ticker)
+
+    asset_info_map = {}
+    if new_tickers_to_lookup:
+        try:
+            asset_info_map = await fetch_asset_info(list(new_tickers_to_lookup))
+        except Exception:
+            pass  # Fallback: will use "A classificar"
+
     for row in sorted_rows:
         try:
             # Auto-create asset if missing
             ticker_set = asset_sets.get(row.asset_class, set())
             if row.ticker not in ticker_set:
+                info = asset_info_map.get(row.ticker, {})
+                sector = info.get("sector") or "A classificar"
+                name = info.get("name") or row.ticker
+
                 if row.asset_class == "br_stock":
                     asset = BrStock(
                         ticker=row.ticker,
-                        name=row.ticker,
-                        sector="A classificar",
+                        name=name,
+                        sector=sector,
                         qty=0,
                         avg_price=0,
                         current_price=0,
@@ -299,8 +318,8 @@ async def confirm_b3(
                 elif row.asset_class == "fii":
                     asset = Fii(
                         ticker=row.ticker,
-                        name=row.ticker,
-                        sector="A classificar",
+                        name=name,
+                        sector=sector,
                         qty=0,
                         avg_price=0,
                         current_price=0,
@@ -310,7 +329,7 @@ async def confirm_b3(
                 elif row.asset_class == "fi_etf":
                     asset = FiEtf(
                         ticker=row.ticker,
-                        name=row.ticker,
+                        name=name,
                         qty=0,
                         avg_price=0,
                         current_price=0,

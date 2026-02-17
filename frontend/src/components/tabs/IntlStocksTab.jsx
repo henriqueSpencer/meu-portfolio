@@ -70,7 +70,7 @@ function PieTooltip({ active, payload }) {
 
 const EMPTY_INTL = {
   ticker: '', name: '', sector: '', type: 'Stock', qty: '', avgPriceUsd: '',
-  currentPriceUsd: '', lpa: '', vpa: '', dividends5y: '', fairPriceManual: '', broker: '',
+  fairPriceManual: '', broker: '',
 };
 
 function IntlStocksTab() {
@@ -100,10 +100,6 @@ function IntlStocksTab() {
       type: stock.type || 'Stock',
       qty: String(stock.qty),
       avgPriceUsd: String(stock.avgPriceUsd),
-      currentPriceUsd: String(stock.currentPriceUsd),
-      lpa: stock.lpa != null ? String(stock.lpa) : '',
-      vpa: stock.vpa != null ? String(stock.vpa) : '',
-      dividends5y: Array.isArray(stock.dividends5y) ? stock.dividends5y.join(', ') : '',
       fairPriceManual: stock.fairPriceManual ? String(stock.fairPriceManual) : '',
       broker: stock.broker || '',
     });
@@ -118,12 +114,10 @@ function IntlStocksTab() {
       type: form.type,
       qty: Number(form.qty) || 0,
       avgPriceUsd: Number(form.avgPriceUsd) || 0,
-      currentPriceUsd: Number(form.currentPriceUsd) || 0,
-      lpa: form.lpa !== '' ? Number(form.lpa) : null,
-      vpa: form.vpa !== '' ? Number(form.vpa) : null,
-      dividends5y: form.dividends5y
-        ? form.dividends5y.split(',').map((v) => Number(v.trim())).filter((v) => !isNaN(v))
-        : [],
+      currentPriceUsd: editing?.currentPriceUsd ?? 0,
+      lpa: editing?.lpa ?? null,
+      vpa: editing?.vpa ?? null,
+      dividends5y: editing?.dividends5y ?? [],
       fairPriceManual: form.fairPriceManual ? Number(form.fairPriceManual) : null,
       broker: form.broker.trim(),
     };
@@ -634,28 +628,14 @@ function IntlStocksTab() {
             <FormInput value={form.broker} onChange={(e) => setForm((f) => ({ ...f, broker: e.target.value }))} placeholder="Avenue" />
           </FormField>
         </div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <FormField label="Qtd">
             <FormInput type="number" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} />
           </FormField>
           <FormField label="PM (USD)">
             <FormInput type="number" step="0.01" value={form.avgPriceUsd} onChange={(e) => setForm((f) => ({ ...f, avgPriceUsd: e.target.value }))} />
           </FormField>
-          <FormField label="Preco Atual (USD)">
-            <FormInput type="number" step="0.01" value={form.currentPriceUsd} onChange={(e) => setForm((f) => ({ ...f, currentPriceUsd: e.target.value }))} />
-          </FormField>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="LPA">
-            <FormInput type="number" step="0.01" value={form.lpa} onChange={(e) => setForm((f) => ({ ...f, lpa: e.target.value }))} />
-          </FormField>
-          <FormField label="VPA">
-            <FormInput type="number" step="0.01" value={form.vpa} onChange={(e) => setForm((f) => ({ ...f, vpa: e.target.value }))} />
-          </FormField>
-        </div>
-        <FormField label="Dividendos 5a (separados por virgula)">
-          <FormInput value={form.dividends5y} onChange={(e) => setForm((f) => ({ ...f, dividends5y: e.target.value }))} placeholder="0.82, 0.88, 0.92, 0.96, 1.00" />
-        </FormField>
         <FormField label="Preco Justo Manual (USD)">
           <FormInput type="number" step="0.01" value={form.fairPriceManual} onChange={(e) => setForm((f) => ({ ...f, fairPriceManual: e.target.value }))} />
         </FormField>

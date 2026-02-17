@@ -21,6 +21,13 @@ import {
   resetSeed,
   uploadB3Preview,
   confirmB3Import,
+  uploadB3MovPreview,
+  confirmB3MovImport,
+  exportPortfolio,
+  resetPortfolio,
+  uploadBackupPreview,
+  confirmBackupImport,
+  updateSectors,
 } from '../services/api';
 
 // ---------------------------------------------------------------------------
@@ -196,4 +203,89 @@ export function useB3Import() {
   });
 
   return { preview, confirm };
+}
+
+// ---------------------------------------------------------------------------
+// B3 Movimentacao Import
+// ---------------------------------------------------------------------------
+
+export function useB3MovImport() {
+  const qc = useQueryClient();
+
+  const preview = useMutation({
+    mutationFn: (file) => uploadB3MovPreview(file),
+  });
+
+  const confirm = useMutation({
+    mutationFn: (rows) => confirmB3MovImport(rows),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['dividends'] });
+      for (const key of ASSET_KEYS) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+
+  return { preview, confirm };
+}
+
+// ---------------------------------------------------------------------------
+// Portfolio Reset
+// ---------------------------------------------------------------------------
+
+export function usePortfolioReset() {
+  const qc = useQueryClient();
+
+  const exportMutation = useMutation({
+    mutationFn: () => exportPortfolio(),
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: () => resetPortfolio(),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+
+  return { export: exportMutation, reset: resetMutation };
+}
+
+// ---------------------------------------------------------------------------
+// Backup Import
+// ---------------------------------------------------------------------------
+
+export function useBackupImport() {
+  const qc = useQueryClient();
+
+  const preview = useMutation({
+    mutationFn: (file) => uploadBackupPreview(file),
+  });
+
+  const confirm = useMutation({
+    mutationFn: (rows) => confirmBackupImport(rows),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      for (const key of ASSET_KEYS) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+
+  return { preview, confirm };
+}
+
+// ---------------------------------------------------------------------------
+// Sector Update
+// ---------------------------------------------------------------------------
+
+export function useSectorUpdate() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => updateSectors(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['br-stocks'] });
+      qc.invalidateQueries({ queryKey: ['fiis'] });
+      qc.invalidateQueries({ queryKey: ['intl-stocks'] });
+    },
+  });
 }

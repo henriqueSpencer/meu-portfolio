@@ -3,7 +3,7 @@
 // ========================================================
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchBrQuotes, fetchExchangeRate, fetchHistoricalRates } from '../services/api';
+import { fetchBrQuotes, fetchExchangeRate, fetchHistoricalRates, fetchFundamentals } from '../services/api';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,6 +50,40 @@ export function useExchangeRate() {
     refetchInterval: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 2,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Fundamentals (LPA, VPA, P/VP, DY, dividends)
+// ---------------------------------------------------------------------------
+
+export function useBrFundamentals(tickers) {
+  const tickerString = tickers.join(',');
+
+  return useQuery({
+    queryKey: ['br-fundamentals', tickerString],
+    queryFn: () => fetchFundamentals(tickers, 'br'),
+    staleTime: 60 * 60 * 1000,
+    gcTime: 2 * 60 * 60 * 1000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    enabled: tickers.length > 0,
+    retry: 1,
+  });
+}
+
+export function useIntlFundamentals(tickers) {
+  const tickerString = tickers.join(',');
+
+  return useQuery({
+    queryKey: ['intl-fundamentals', tickerString],
+    queryFn: () => fetchFundamentals(tickers, 'intl'),
+    staleTime: 60 * 60 * 1000,
+    gcTime: 2 * 60 * 60 * 1000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    enabled: tickers.length > 0,
+    retry: 1,
   });
 }
 

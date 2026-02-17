@@ -22,6 +22,9 @@ from .routers import (
     cash_accounts,
     seed,
     import_b3,
+    import_b3_movimentacao,
+    portfolio_reset,
+    import_backup,
 )
 from .routers.seed import _is_empty, run_seed
 
@@ -66,6 +69,9 @@ app.include_router(fi_etfs.router)
 app.include_router(cash_accounts.router)
 app.include_router(seed.router)
 app.include_router(import_b3.router)
+app.include_router(import_b3_movimentacao.router)
+app.include_router(portfolio_reset.router)
+app.include_router(import_backup.router)
 
 
 @app.get("/api/health")

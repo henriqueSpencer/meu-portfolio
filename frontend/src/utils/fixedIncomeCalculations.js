@@ -150,6 +150,12 @@ export function calcValuePrefixado(appliedValue, applicationDate, contractedRate
 export function calculateCurrentValue(bond, historicalData) {
   if (!historicalData) return bond.currentValue || bond.appliedValue;
 
+  // If contracted rate is unknown (e.g. from B3 import with rate="A definir"),
+  // use the actual currentValue stored in the database instead of computing
+  if (!bond.contractedRate) {
+    return bond.currentValue || bond.appliedValue;
+  }
+
   const cdiSeries = historicalData['12'] || [];
   const ipcaSeries = historicalData['433'] || [];
   const selicSeries = historicalData['11'] || [];

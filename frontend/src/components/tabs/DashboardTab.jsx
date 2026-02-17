@@ -92,6 +92,7 @@ export default function DashboardTab() {
     watchlistAlerts,
     benchmarks,
     realAssets,
+    patrimonialHistory,
   } = useApp();
 
   // ---- Derived values -----------------------------------------------------
@@ -105,9 +106,24 @@ export default function DashboardTab() {
     [realAssets],
   );
 
-  // Mock month / year returns (as specified)
-  const monthReturn = 2.43;
-  const yearReturn = 13.0;
+  // Month / year returns derived from patrimonial history
+  const { monthReturn, yearReturn } = useMemo(() => {
+    const len = patrimonialHistory.length;
+    if (len < 2) return { monthReturn: 0, yearReturn: 0 };
+
+    const last = patrimonialHistory[len - 1].total;
+
+    // Monthly: compare last two entries
+    const prevMonth = patrimonialHistory[len - 2].total;
+    const mr = prevMonth === 0 ? 0 : ((last - prevMonth) / prevMonth) * 100;
+
+    // Annual: compare against ~12 months ago (or earliest available)
+    const yearIdx = Math.max(0, len - 13);
+    const yearBase = patrimonialHistory[yearIdx].total;
+    const yr = yearBase === 0 ? 0 : ((last - yearBase) / yearBase) * 100;
+
+    return { monthReturn: mr, yearReturn: yr };
+  }, [patrimonialHistory]);
 
   // Donut chart data -- filter out zero-value classes so we get no empty slices
   const donutData = useMemo(

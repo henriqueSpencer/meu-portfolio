@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { calculateAllocation } from '../utils/calculations';
 import { toSnakeCase } from '../utils/apiHelpers';
-import { useBrQuotes, useExchangeRate } from '../hooks/useMarketData';
+import { useBrQuotes, useExchangeRate, useBrFundamentals, useIntlFundamentals } from '../hooks/useMarketData';
 import {
   useBrStocks,
   useFiis,
@@ -19,6 +19,10 @@ import {
   useStaticData,
   useResetData,
   useB3Import,
+  useB3MovImport,
+  usePortfolioReset,
+  useBackupImport,
+  useSectorUpdate,
 } from '../hooks/usePortfolio';
 
 const FALLBACK_EXCHANGE_RATE = 6.05;
@@ -50,6 +54,10 @@ export function AppProvider({ children }) {
   const staticDataQuery = useStaticData();
   const resetMutation = useResetData();
   const b3Import = useB3Import();
+  const b3MovImport = useB3MovImport();
+  const portfolioReset = usePortfolioReset();
+  const backupImport = useBackupImport();
+  const sectorUpdate = useSectorUpdate();
 
   // Raw data arrays (fallback to stable empty refs while loading)
   const brStocks = brStocksCrud.query.data ?? EMPTY;
@@ -79,8 +87,18 @@ export function AppProvider({ children }) {
     ...fiEtfs.map(e => e.ticker),
   ], [brStocks, fiis, fiEtfs]);
 
+  const intlTickers = useMemo(() => intlStocks.map(s => s.ticker), [intlStocks]);
+
   const quotesQuery = useBrQuotes(brTickers);
   const exchangeRateQuery = useExchangeRate();
+
+  // Fundamentals (LPA, VPA, P/VP, DY, dividends)
+  const brFundTickers = useMemo(() => [
+    ...brStocks.map(s => s.ticker),
+    ...fiis.map(f => f.ticker),
+  ], [brStocks, fiis]);
+  const brFundQuery = useBrFundamentals(brFundTickers);
+  const intlFundQuery = useIntlFundamentals(intlTickers);
 
   const exchangeRate = exchangeRateQuery.data ?? FALLBACK_EXCHANGE_RATE;
 
@@ -96,21 +114,44 @@ export function AppProvider({ children }) {
     return map;
   }, [quotesQuery.data]);
 
+  const brFundMap = useMemo(() => brFundQuery.data || {}, [brFundQuery.data]);
+  const intlFundMap = useMemo(() => intlFundQuery.data || {}, [intlFundQuery.data]);
+
   const liveBrStocks = useMemo(() => {
-    if (Object.keys(livePriceMap).length === 0) return brStocks;
+    const hasPrice = Object.keys(livePriceMap).length > 0;
+    const hasFund = Object.keys(brFundMap).length > 0;
+    if (!hasPrice && !hasFund) return brStocks;
     return brStocks.map(s => {
+      const updates = {};
       const live = livePriceMap[s.ticker];
-      return live != null && live !== s.currentPrice ? { ...s, currentPrice: live } : s;
+      if (live != null) updates.currentPrice = live;
+      const fund = brFundMap[s.ticker];
+      if (fund) {
+        if (fund.lpa != null) updates.lpa = fund.lpa;
+        if (fund.vpa != null) updates.vpa = fund.vpa;
+        if (fund.dividends5y) updates.dividends5y = fund.dividends5y;
+      }
+      return Object.keys(updates).length > 0 ? { ...s, ...updates } : s;
     });
-  }, [brStocks, livePriceMap]);
+  }, [brStocks, livePriceMap, brFundMap]);
 
   const liveFiis = useMemo(() => {
-    if (Object.keys(livePriceMap).length === 0) return fiis;
+    const hasPrice = Object.keys(livePriceMap).length > 0;
+    const hasFund = Object.keys(brFundMap).length > 0;
+    if (!hasPrice && !hasFund) return fiis;
     return fiis.map(f => {
+      const updates = {};
       const live = livePriceMap[f.ticker];
-      return live != null && live !== f.currentPrice ? { ...f, currentPrice: live } : f;
+      if (live != null) updates.currentPrice = live;
+      const fund = brFundMap[f.ticker];
+      if (fund) {
+        if (fund.pvp != null) updates.pvp = fund.pvp;
+        if (fund.dy != null) updates.dy12m = fund.dy;
+        if (fund.lastDividend != null) updates.lastDividend = fund.lastDividend;
+      }
+      return Object.keys(updates).length > 0 ? { ...f, ...updates } : f;
     });
-  }, [fiis, livePriceMap]);
+  }, [fiis, livePriceMap, brFundMap]);
 
   const liveFiEtfs = useMemo(() => {
     if (Object.keys(livePriceMap).length === 0) return fiEtfs;
@@ -119,6 +160,20 @@ export function AppProvider({ children }) {
       return live != null && live !== e.currentPrice ? { ...e, currentPrice: live } : e;
     });
   }, [fiEtfs, livePriceMap]);
+
+  const liveIntlStocks = useMemo(() => {
+    const hasFund = Object.keys(intlFundMap).length > 0;
+    if (!hasFund) return intlStocks;
+    return intlStocks.map(s => {
+      const fund = intlFundMap[s.ticker];
+      if (!fund) return s;
+      const updates = {};
+      if (fund.lpa != null) updates.lpa = fund.lpa;
+      if (fund.vpa != null) updates.vpa = fund.vpa;
+      if (fund.dividends5y) updates.dividends5y = fund.dividends5y;
+      return Object.keys(updates).length > 0 ? { ...s, ...updates } : s;
+    });
+  }, [intlStocks, intlFundMap]);
 
   const marketDataStatus = useMemo(() => ({
     quotesUpdatedAt: quotesQuery.dataUpdatedAt || null,
@@ -139,8 +194,8 @@ export function AppProvider({ children }) {
   // Derived values
   // ---------------------------------------------------------------------------
   const allocation = useMemo(
-    () => calculateAllocation(liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate, liveFiEtfs, cashAccounts),
-    [liveBrStocks, liveFiis, intlStocks, fixedIncome, exchangeRate, liveFiEtfs, cashAccounts]
+    () => calculateAllocation(liveBrStocks, liveFiis, liveIntlStocks, fixedIncome, exchangeRate, liveFiEtfs, cashAccounts),
+    [liveBrStocks, liveFiis, liveIntlStocks, fixedIncome, exchangeRate, liveFiEtfs, cashAccounts]
   );
 
   const totalPatrimony = useMemo(() => {
@@ -397,7 +452,7 @@ export function AppProvider({ children }) {
     brokerFilter, setBrokerFilter,
     brStocks: liveBrStocks, setBrStocks,
     fiis: liveFiis, setFiis,
-    intlStocks, setIntlStocks,
+    intlStocks: liveIntlStocks, setIntlStocks,
     fixedIncome, setFixedIncome,
     fiEtfs: liveFiEtfs, setFiEtfs,
     cashAccounts, setCashAccounts,
@@ -420,6 +475,10 @@ export function AppProvider({ children }) {
     marketDataStatus,
     resetData,
     b3Import,
+    b3MovImport,
+    portfolioReset,
+    backupImport,
+    sectorUpdate,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

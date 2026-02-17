@@ -22,8 +22,15 @@ import {
   Pencil,
   FileSpreadsheet,
   Loader2,
+  AlertTriangle,
+  Download,
+  Upload,
+  RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 import ImportPreviewModal from '../ImportPreviewModal';
+import BackupPreviewModal from '../BackupPreviewModal';
+import MovimentacaoPreviewModal from '../MovimentacaoPreviewModal';
 
 const GLASS =
   'rounded-xl border border-white/10 bg-white/5 backdrop-blur-md';
@@ -130,6 +137,10 @@ export default function TransactionsTab() {
     currency,
     exchangeRate,
     b3Import,
+    b3MovImport,
+    portfolioReset,
+    backupImport,
+    sectorUpdate,
   } = useApp();
 
   const [showForm, setShowForm] = useState(false);
@@ -141,13 +152,27 @@ export default function TransactionsTab() {
   // B3 Import state
   const fileInputRef = useRef(null);
   const [importPreview, setImportPreview] = useState(null);
+  const [movPreview, setMovPreview] = useState(null);
+
+  // Backup Import state
+  const backupFileInputRef = useRef(null);
+  const [backupPreview, setBackupPreview] = useState(null);
+
+  // Reset confirmation modal
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStep, setResetStep] = useState('confirm'); // 'confirm' | 'exporting' | 'deleting' | 'done'
 
   const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const result = await b3Import.preview.mutateAsync(file);
-      setImportPreview(result);
+      if (file.name.toLowerCase().startsWith('movimentacao')) {
+        const result = await b3MovImport.preview.mutateAsync(file);
+        setMovPreview(result);
+      } else {
+        const result = await b3Import.preview.mutateAsync(file);
+        setImportPreview(result);
+      }
     } catch (err) {
       alert(`Erro ao processar arquivo: ${err.message}`);
     }
@@ -161,6 +186,60 @@ export default function TransactionsTab() {
       setImportPreview(null);
     } catch (err) {
       alert(`Erro ao importar: ${err.message}`);
+    }
+  };
+
+  const handleMovConfirm = async (selectedRows) => {
+    try {
+      await b3MovImport.confirm.mutateAsync(selectedRows);
+      setMovPreview(null);
+    } catch (err) {
+      alert(`Erro ao importar movimentacoes: ${err.message}`);
+    }
+  };
+
+  // ---- Portfolio Reset handlers ----
+  const handleResetPortfolio = async () => {
+    try {
+      // Step 1: Export
+      setResetStep('exporting');
+      await portfolioReset.export.mutateAsync();
+
+      // Step 2: Delete
+      setResetStep('deleting');
+      await portfolioReset.reset.mutateAsync();
+
+      // Done
+      setResetStep('done');
+      setTimeout(() => {
+        setShowResetModal(false);
+        setResetStep('confirm');
+      }, 1500);
+    } catch (err) {
+      alert(`Erro ao zerar carteira: ${err.message}`);
+      setResetStep('confirm');
+    }
+  };
+
+  // ---- Backup Import handlers ----
+  const handleBackupFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await backupImport.preview.mutateAsync(file);
+      setBackupPreview(result);
+    } catch (err) {
+      alert(`Erro ao processar backup: ${err.message}`);
+    }
+    e.target.value = '';
+  };
+
+  const handleBackupConfirm = async (selectedRows) => {
+    try {
+      await backupImport.confirm.mutateAsync(selectedRows);
+      setBackupPreview(null);
+    } catch (err) {
+      alert(`Erro ao restaurar backup: ${err.message}`);
     }
   };
 
@@ -311,7 +390,7 @@ export default function TransactionsTab() {
             <p className="text-xs text-slate-500">Registro de movimentacoes</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <input
             ref={fileInputRef}
             type="file"
@@ -319,12 +398,62 @@ export default function TransactionsTab() {
             onChange={handleImportFile}
             className="hidden"
           />
+          <input
+            ref={backupFileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleBackupFile}
+            className="hidden"
+          />
+          <button
+            onClick={() => setShowResetModal(true)}
+            disabled={transactions.length === 0}
+            className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Exportar backup e zerar toda a carteira"
+          >
+            <RotateCcw size={16} />
+            Zerar Carteira
+          </button>
+          <button
+            onClick={() => {
+              sectorUpdate.mutate(undefined, {
+                onSuccess: (data) => {
+                  alert(`Setores atualizados: ${data.count} ativos`);
+                },
+                onError: (err) => {
+                  alert(`Erro ao atualizar setores: ${err.message}`);
+                },
+              });
+            }}
+            disabled={sectorUpdate.isPending}
+            className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 transition hover:bg-amber-500/20 disabled:opacity-50"
+            title="Buscar setores automaticamente do Yahoo Finance para ativos com 'A classificar'"
+          >
+            {sectorUpdate.isPending ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <RefreshCw size={16} />
+            )}
+            Atualizar Setores
+          </button>
+          <button
+            onClick={() => backupFileInputRef.current?.click()}
+            disabled={backupImport.preview.isPending}
+            className="flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-400 transition hover:bg-indigo-500/20 disabled:opacity-50"
+          >
+            {backupImport.preview.isPending ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Upload size={16} />
+            )}
+            Importar Backup
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={b3Import.preview.isPending}
+            disabled={b3Import.preview.isPending || b3MovImport.preview.isPending}
             className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-400 transition hover:bg-cyan-500/20 disabled:opacity-50"
           >
-            {b3Import.preview.isPending ? (
+            {(b3Import.preview.isPending || b3MovImport.preview.isPending) ? (
               <Loader2 size={16} className="animate-spin" />
             ) : (
               <FileSpreadsheet size={16} />
@@ -695,6 +824,120 @@ export default function TransactionsTab() {
           onClose={() => setImportPreview(null)}
           isConfirming={b3Import.confirm.isPending}
         />
+      )}
+
+      {/* Backup Import Preview Modal */}
+      {backupPreview && (
+        <BackupPreviewModal
+          data={backupPreview}
+          onConfirm={handleBackupConfirm}
+          onClose={() => setBackupPreview(null)}
+          isConfirming={backupImport.confirm.isPending}
+        />
+      )}
+
+      {/* Movimentacao Import Preview Modal */}
+      {movPreview && (
+        <MovimentacaoPreviewModal
+          data={movPreview}
+          onConfirm={handleMovConfirm}
+          onClose={() => setMovPreview(null)}
+          isConfirming={b3MovImport.confirm.isPending}
+        />
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f1424] shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-white/10 px-6 py-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/20">
+                <AlertTriangle size={22} className="text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">Zerar Carteira</h2>
+                <p className="text-xs text-slate-500">Esta acao nao pode ser desfeita</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              {resetStep === 'confirm' && (
+                <>
+                  <p className="text-sm text-slate-300">
+                    Isso ira:
+                  </p>
+                  <ul className="space-y-2 text-sm text-slate-400">
+                    <li className="flex items-center gap-2">
+                      <Download size={14} className="text-indigo-400 shrink-0" />
+                      <span>Exportar backup XLSX com todos os <span className="font-medium text-slate-200">{transactions.length}</span> lancamentos</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Trash2 size={14} className="text-red-400 shrink-0" />
+                      <span>Apagar toda a carteira (ativos, lancamentos, dividendos, historico, watchlist, metas)</span>
+                    </li>
+                  </ul>
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+                    <p className="text-xs text-amber-300">
+                      O arquivo de backup sera baixado automaticamente. Use "Importar Backup" para restaurar depois.
+                    </p>
+                  </div>
+                </>
+              )}
+              {resetStep === 'exporting' && (
+                <div className="flex items-center gap-3 py-4">
+                  <Loader2 size={20} className="animate-spin text-indigo-400" />
+                  <span className="text-sm text-slate-300">Exportando backup dos lancamentos...</span>
+                </div>
+              )}
+              {resetStep === 'deleting' && (
+                <div className="flex items-center gap-3 py-4">
+                  <Loader2 size={20} className="animate-spin text-red-400" />
+                  <span className="text-sm text-slate-300">Apagando lancamentos e ativos...</span>
+                </div>
+              )}
+              {resetStep === 'done' && (
+                <div className="flex items-center gap-3 py-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+                    <Download size={16} className="text-emerald-400" />
+                  </div>
+                  <span className="text-sm text-emerald-300">Carteira zerada com sucesso! Backup salvo.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-white/10 px-6 py-4">
+              {resetStep === 'confirm' ? (
+                <>
+                  <button
+                    onClick={() => setShowResetModal(false)}
+                    className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:bg-white/5"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleResetPortfolio}
+                    className="flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-red-500"
+                  >
+                    <Trash2 size={16} />
+                    Confirmar - Zerar Carteira
+                  </button>
+                </>
+              ) : resetStep === 'done' ? (
+                <button
+                  onClick={() => { setShowResetModal(false); setResetStep('confirm'); }}
+                  className="ml-auto rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                >
+                  Fechar
+                </button>
+              ) : (
+                <div className="ml-auto text-xs text-slate-500">Aguarde...</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
