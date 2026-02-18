@@ -8,6 +8,7 @@ class RealAssetBase(BaseModel):
     estimated_value: float = 0
     acquisition_date: datetime.date
     include_in_total: bool = True
+    is_closed: bool = False
 
 
 class RealAssetCreate(RealAssetBase):

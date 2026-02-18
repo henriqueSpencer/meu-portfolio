@@ -20,3 +20,4 @@ class FixedIncome(Base):
     indexer: Mapped[str] = mapped_column(String(20), default="CDI")
     contracted_rate: Mapped[float] = mapped_column(Float, default=0)
     tax_exempt: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_closed: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -255,6 +255,14 @@ export async function uploadBackupPreview(file) {
   return camelizeKeys(data);
 }
 
+// ---------------------------------------------------------------------------
+// Closed Position Metrics
+// ---------------------------------------------------------------------------
+
+export async function fetchClosedPositionMetrics(assetClass) {
+  return request(`/closed-position-metrics?asset_class=${assetClass}`, { raw: true });
+}
+
 export async function confirmBackupImport(rows) {
   const snakeRows = rows.map(r => ({
     date: r.date,

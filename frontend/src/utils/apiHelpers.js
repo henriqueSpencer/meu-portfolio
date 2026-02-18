@@ -60,6 +60,7 @@ export function toSnakeCase(obj, type) {
         indexer: obj.indexer || 'CDI',
         contracted_rate: obj.contractedRate ?? obj.contracted_rate ?? 0,
         tax_exempt: obj.taxExempt ?? obj.tax_exempt ?? false,
+        is_closed: obj.isClosed ?? obj.is_closed ?? false,
       };
     case 'realAsset':
       return {
@@ -69,6 +70,7 @@ export function toSnakeCase(obj, type) {
         estimated_value: obj.estimatedValue ?? obj.estimated_value ?? 0,
         acquisition_date: obj.acquisitionDate ?? obj.acquisition_date,
         include_in_total: obj.includeInTotal ?? obj.include_in_total ?? true,
+        is_closed: obj.isClosed ?? obj.is_closed ?? false,
       };
     case 'watchlist':
       return {

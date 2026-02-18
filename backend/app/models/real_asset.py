@@ -14,3 +14,4 @@ class RealAsset(Base):
     estimated_value: Mapped[float] = mapped_column(Float, default=0)
     acquisition_date: Mapped[datetime.date] = mapped_column(Date)
     include_in_total: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_closed: Mapped[bool] = mapped_column(Boolean, default=False)

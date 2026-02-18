@@ -79,6 +79,21 @@ export function formatMonthYear(dateStr) {
 }
 
 /**
+ * Formata dias em período legível: "2a 3m", "5m", "15d"
+ */
+export function formatTimeHeld(days) {
+  if (days == null || days <= 0) return '-';
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  const remainingDays = days % 30;
+  const parts = [];
+  if (years > 0) parts.push(`${years}a`);
+  if (months > 0) parts.push(`${months}m`);
+  if (parts.length === 0) parts.push(`${remainingDays}d`);
+  return parts.join(' ');
+}
+
+/**
  * Classe CSS baseada em valor positivo/negativo
  */
 export function colorClass(value) {

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
+import { useClosedPositionMetrics } from '../../hooks/usePortfolio';
 import {
   grahamFairPrice,
   bazinFairPrice,
@@ -13,6 +14,7 @@ import {
   formatUSD,
   formatCurrency,
   formatPct,
+  formatTimeHeld,
   colorClass,
 } from '../../utils/formatters';
 import {
@@ -25,6 +27,7 @@ import {
 import { Globe, ArrowLeftRight, Plus } from 'lucide-react';
 import { SECTOR_COLORS } from '../../data/mockData';
 import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
+import ClosedPositionsSection from '../ClosedPositionsSection';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -177,9 +180,17 @@ function IntlStocksTab() {
         notes: 'Encerramento de posicao via aba RV Exterior',
       });
     }
-    setIntlStocks((prev) => prev.filter((s) => s.ticker !== editing.ticker));
+    // Don't remove from DB -- asset stays with qty=0 in closed section
     setModalOpen(false);
   }
+
+  function handlePermanentDelete(stock) {
+    setIntlStocks((prev) => prev.filter((s) => s.ticker !== stock.ticker));
+  }
+
+  // ---- Closed position metrics (lazy) ----
+  const [metricsEnabled, setMetricsEnabled] = useState(false);
+  const metricsQuery = useClosedPositionMetrics('intl_stock', metricsEnabled);
 
   const rate = exchangeRate; // alias for readability
 
@@ -189,10 +200,14 @@ function IntlStocksTab() {
     return intlStocks.filter((s) => s.broker === brokerFilter);
   }, [intlStocks, brokerFilter]);
 
+  // ------ active / closed split ------
+  const activeItems = useMemo(() => filtered.filter((s) => (s.qty || 0) > 0), [filtered]);
+  const closedItems = useMemo(() => filtered.filter((s) => (s.qty || 0) === 0), [filtered]);
+
   // ------ enriched rows ------
   const rows = useMemo(
     () =>
-      filtered.map((s) => {
+      activeItems.map((s) => {
         const usdReturn = returnPct(s.currentPriceUsd, s.avgPriceUsd);
 
         // BRL-adjusted return accounts for exchange movement.
@@ -243,7 +258,7 @@ function IntlStocksTab() {
           indicator,
         };
       }),
-    [filtered, rate],
+    [activeItems, rate],
   );
 
   // ------ totals ------
@@ -494,6 +509,46 @@ function IntlStocksTab() {
           </table>
         </div>
       </div>
+
+      {/* ===== Closed Positions ===== */}
+      <ClosedPositionsSection
+        items={closedItems}
+        title="Posicoes Encerradas"
+        metrics={metricsQuery.data}
+        metricsLoading={metricsQuery.isLoading && metricsEnabled}
+        onExpand={() => setMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDelete}
+        columns={[
+          { label: 'Ticker', align: 'left' },
+          { label: 'Nome', align: 'left' },
+          { label: 'PM Compra (USD)', align: 'right' },
+          { label: 'PM Venda (USD)', align: 'right' },
+          { label: 'Resultado %', align: 'right' },
+          { label: 'Lucro/Prej.', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+          { label: 'Tempo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatUSD(m.avg_buy_price) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatUSD(m.avg_sell_price) : '-'}</td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m && m.total_cost > 0 ? formatPct(((m.total_proceeds - m.total_cost) / m.total_cost) * 100) : '-'}
+            </td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m ? formatUSD(m.total_proceeds - m.total_cost) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m ? formatTimeHeld(m.time_held_days) : '-'}
+            </td>
+          </>
+        )}
+      />
 
       {/* ===== Bottom grid: Exchange Card + Sector Pie ===== */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

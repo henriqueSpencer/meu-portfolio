@@ -82,20 +82,20 @@ export function AppProvider({ children }) {
   // Live market data (TanStack Query hooks)
   // ---------------------------------------------------------------------------
   const brTickers = useMemo(() => [
-    ...brStocks.map(s => s.ticker),
-    ...fiis.map(f => f.ticker),
-    ...fiEtfs.map(e => e.ticker),
+    ...brStocks.filter(s => (s.qty || 0) > 0).map(s => s.ticker),
+    ...fiis.filter(f => (f.qty || 0) > 0).map(f => f.ticker),
+    ...fiEtfs.filter(e => (e.qty || 0) > 0).map(e => e.ticker),
   ], [brStocks, fiis, fiEtfs]);
 
-  const intlTickers = useMemo(() => intlStocks.map(s => s.ticker), [intlStocks]);
+  const intlTickers = useMemo(() => intlStocks.filter(s => (s.qty || 0) > 0).map(s => s.ticker), [intlStocks]);
 
   const quotesQuery = useBrQuotes(brTickers);
   const exchangeRateQuery = useExchangeRate();
 
   // Fundamentals (LPA, VPA, P/VP, DY, dividends)
   const brFundTickers = useMemo(() => [
-    ...brStocks.map(s => s.ticker),
-    ...fiis.map(f => f.ticker),
+    ...brStocks.filter(s => (s.qty || 0) > 0).map(s => s.ticker),
+    ...fiis.filter(f => (f.qty || 0) > 0).map(f => f.ticker),
   ], [brStocks, fiis]);
   const brFundQuery = useBrFundamentals(brFundTickers);
   const intlFundQuery = useIntlFundamentals(intlTickers);
@@ -201,7 +201,7 @@ export function AppProvider({ children }) {
   const totalPatrimony = useMemo(() => {
     const financial = allocation.total;
     const immobilized = realAssets
-      .filter(a => a.includeInTotal)
+      .filter(a => a.includeInTotal && !a.isClosed)
       .reduce((sum, a) => sum + (a.estimatedValue || 0), 0);
     return financial + immobilized;
   }, [allocation, realAssets]);

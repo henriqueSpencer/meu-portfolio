@@ -15,6 +15,7 @@ class FixedIncomeBase(BaseModel):
     indexer: Literal["CDI", "IPCA", "Selic", "Prefixado"] = "CDI"
     contracted_rate: float = 0
     tax_exempt: bool = False
+    is_closed: bool = False
 
 
 class FixedIncomeCreate(FixedIncomeBase):

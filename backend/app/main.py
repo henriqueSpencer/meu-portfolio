@@ -26,6 +26,7 @@ from .routers import (
     portfolio_reset,
     import_backup,
     import_templates,
+    closed_positions,
 )
 from .routers.seed import _is_empty, run_seed
 
@@ -74,6 +75,7 @@ app.include_router(import_b3_movimentacao.router)
 app.include_router(portfolio_reset.router)
 app.include_router(import_backup.router)
 app.include_router(import_templates.router)
+app.include_router(closed_positions.router)
 
 
 @app.get("/api/health")

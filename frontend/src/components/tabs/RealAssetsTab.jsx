@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { useClosedPositionMetrics } from '../../hooks/usePortfolio';
+import { formatCurrency, formatBRL, formatDate, formatTimeHeld, colorClass } from '../../utils/formatters';
 import { Home, Car, Package, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
 import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
+import ClosedPositionsSection from '../ClosedPositionsSection';
 
 // ---------------------------------------------------------------------------
 // Shared glass-card style token (consistent with other tabs)
@@ -133,25 +135,38 @@ export default function RealAssetsTab() {
         notes: 'Encerramento via aba Imobilizado',
       });
     }
-    setRealAssets((prev) => prev.filter((a) => a.id !== editing.id));
+    // Mark as closed instead of deleting
+    setRealAssets((prev) => prev.map((a) => a.id === editing.id ? { ...a, isClosed: true } : a));
     setModalOpen(false);
   }
 
+  function handlePermanentDelete(asset) {
+    setRealAssets((prev) => prev.filter((a) => a.id !== asset.id));
+  }
+
+  // ---- Closed position metrics (lazy) ----
+  const [metricsEnabled, setMetricsEnabled] = useState(false);
+  const metricsQuery = useClosedPositionMetrics('real_asset', metricsEnabled);
+
+  // ---- Active / Closed split ----
+  const activeAssets = useMemo(() => realAssets.filter((a) => !a.isClosed), [realAssets]);
+  const closedAssets = useMemo(() => realAssets.filter((a) => a.isClosed), [realAssets]);
+
   // ---- Derived totals ------------------------------------------------------
   const totalValue = useMemo(
-    () => realAssets.reduce((sum, a) => sum + a.estimatedValue, 0),
-    [realAssets],
+    () => activeAssets.reduce((sum, a) => sum + a.estimatedValue, 0),
+    [activeAssets],
   );
 
   const includedTotal = useMemo(
     () =>
-      realAssets
+      activeAssets
         .filter((a) => a.includeInTotal)
         .reduce((sum, a) => sum + a.estimatedValue, 0),
-    [realAssets],
+    [activeAssets],
   );
 
-  const assetCount = realAssets.length;
+  const assetCount = activeAssets.length;
 
   // ---- Handlers ------------------------------------------------------------
   function handleToggleInclude(id) {
@@ -221,7 +236,7 @@ export default function RealAssetsTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {realAssets.map((asset) => {
+          {activeAssets.map((asset) => {
             const Icon = assetIcon(asset.type);
             const badgeCls = iconBadgeClass(asset.type);
             const included = asset.includeInTotal;
@@ -310,6 +325,42 @@ export default function RealAssetsTab() {
           })}
         </div>
       )}
+      {/* ---- Closed Real Assets ---- */}
+      <ClosedPositionsSection
+        items={closedAssets}
+        title="Ativos Encerrados"
+        metrics={metricsQuery.data}
+        metricsLoading={metricsQuery.isLoading && metricsEnabled}
+        onExpand={() => setMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDelete}
+        columns={[
+          { label: 'Descricao', align: 'left' },
+          { label: 'Tipo', align: 'left' },
+          { label: 'Valor Aquisicao', align: 'right' },
+          { label: 'Valor Venda', align: 'right' },
+          { label: 'Resultado', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+          { label: 'Tempo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.description}</td>
+            <td className="py-2 px-2 text-sm text-slate-400">{item.type}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m ? formatTimeHeld(m.time_held_days) : '-'}
+            </td>
+          </>
+        )}
+      />
+
       {/* ---- CRUD Modal ---- */}
       <FormModal
         isOpen={modalOpen}

@@ -2,13 +2,16 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
 import { useHistoricalRates } from '../../hooks/useMarketData';
+import { useClosedPositionMetrics } from '../../hooks/usePortfolio';
 import {
   formatBRL,
   formatCurrency,
   formatPct,
   formatDate,
+  formatTimeHeld,
   colorClass,
 } from '../../utils/formatters';
+import ClosedPositionsSection from '../ClosedPositionsSection';
 import {
   calculateFixedIncomeSummary,
   buildQuotaHistory,
@@ -259,8 +262,24 @@ export default function FixedIncomeTab() {
   const [showIndividualBonds, setShowIndividualBonds] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
 
+  // ---- Closed position metrics (lazy) ----
+  const [fiMetricsEnabled, setFiMetricsEnabled] = useState(false);
+  const [etfMetricsEnabled, setEtfMetricsEnabled] = useState(false);
+  const [cashMetricsEnabled, setCashMetricsEnabled] = useState(false);
+  const fiMetricsQuery = useClosedPositionMetrics('fixed_income', fiMetricsEnabled);
+  const etfMetricsQuery = useClosedPositionMetrics('fi_etf', etfMetricsEnabled);
+  const cashMetricsQuery = useClosedPositionMetrics('cash_account', cashMetricsEnabled);
+
+  // ---- Active / Closed splits ----
+  const activeBonds = useMemo(() => fixedIncome.filter((b) => !b.isClosed), [fixedIncome]);
+  const closedBonds = useMemo(() => fixedIncome.filter((b) => b.isClosed), [fixedIncome]);
+  const activeEtfs = useMemo(() => fiEtfs.filter((e) => (e.qty || 0) > 0), [fiEtfs]);
+  const closedEtfs = useMemo(() => fiEtfs.filter((e) => (e.qty || 0) === 0), [fiEtfs]);
+  const activeCash = useMemo(() => cashAccounts.filter((a) => (a.balance || 0) !== 0), [cashAccounts]);
+  const closedCash = useMemo(() => cashAccounts.filter((a) => (a.balance || 0) === 0), [cashAccounts]);
+
   // ---- Fetch BCB historical data ----
-  const earliestDate = useMemo(() => getEarliestDate(fixedIncome), [fixedIncome]);
+  const earliestDate = useMemo(() => getEarliestDate(activeBonds), [activeBonds]);
   const startBcb = useMemo(() => (earliestDate ? isoToBcb(earliestDate) : ''), [earliestDate]);
   const endBcb = useMemo(() => todayBcb(), []);
 
@@ -272,14 +291,14 @@ export default function FixedIncomeTab() {
 
   // ---- Bond calculations ----
   const { bonds: enrichedBonds, totals } = useMemo(
-    () => calculateFixedIncomeSummary(fixedIncome, historicalData),
-    [fixedIncome, historicalData]
+    () => calculateFixedIncomeSummary(activeBonds, historicalData),
+    [activeBonds, historicalData]
   );
 
   // ---- Bonds selected for portfolio composition ----
   const selectedBonds = useMemo(
-    () => fixedIncome.filter((b) => !excludedBondIds.has(b.id)),
-    [fixedIncome, excludedBondIds]
+    () => activeBonds.filter((b) => !excludedBondIds.has(b.id)),
+    [activeBonds, excludedBondIds]
   );
 
   const quotaHistory = useMemo(
@@ -311,24 +330,24 @@ export default function FixedIncomeTab() {
 
   // ---- ETF totals ----
   const etfTotals = useMemo(() => {
-    const totalInvested = fiEtfs.reduce((sum, e) => sum + e.qty * (e.avgPrice || 0), 0);
-    const totalCurrent = fiEtfs.reduce((sum, e) => sum + e.qty * (e.currentPrice || 0), 0);
+    const totalInvested = activeEtfs.reduce((sum, e) => sum + e.qty * (e.avgPrice || 0), 0);
+    const totalCurrent = activeEtfs.reduce((sum, e) => sum + e.qty * (e.currentPrice || 0), 0);
     const returnValue = totalCurrent - totalInvested;
     const returnPct = totalInvested > 0 ? (returnValue / totalInvested) * 100 : 0;
     return { totalInvested, totalCurrent, returnValue, returnPct };
-  }, [fiEtfs]);
+  }, [activeEtfs]);
 
   // ---- Cash totals ----
   const cashTotals = useMemo(() => {
-    const positive = cashAccounts
+    const positive = activeCash
       .filter((a) => a.balance > 0)
       .reduce((sum, a) => sum + a.balance, 0);
-    const negative = cashAccounts
+    const negative = activeCash
       .filter((a) => a.balance < 0)
       .reduce((sum, a) => sum + a.balance, 0);
     const net = positive + negative;
     return { positive, negative, net };
-  }, [cashAccounts]);
+  }, [activeCash]);
 
   // ---- Combined RF total for summary ----
   const combinedRfTotal = totals.totalGross + etfTotals.totalCurrent;
@@ -613,8 +632,13 @@ export default function FixedIncomeTab() {
         notes: 'Encerramento via aba Renda Fixa',
       });
     }
-    setFixedIncome((prev) => prev.filter((b) => b.id !== editing.id));
+    // Mark as closed instead of deleting
+    setFixedIncome((prev) => prev.map((b) => b.id === editing.id ? { ...b, isClosed: true } : b));
     setModalOpen(false);
+  }
+
+  function handlePermanentDeleteBond(bond) {
+    setFixedIncome((prev) => prev.filter((b) => b.id !== bond.id));
   }
 
   // ---- Handle type change: auto-set tax exempt ----
@@ -728,8 +752,12 @@ export default function FixedIncomeTab() {
         notes: 'Encerramento via aba Renda Fixa',
       });
     }
-    setFiEtfs((prev) => prev.filter((e) => e.ticker !== editingEtf.ticker));
+    // Don't remove from DB -- asset stays with qty=0 in closed section
     setEtfModalOpen(false);
+  }
+
+  function handlePermanentDeleteEtf(etf) {
+    setFiEtfs((prev) => prev.filter((e) => e.ticker !== etf.ticker));
   }
 
   // ---- Cash CRUD handlers ----
@@ -813,8 +841,12 @@ export default function FixedIncomeTab() {
         notes: 'Encerramento via aba Renda Fixa',
       });
     }
-    setCashAccounts((prev) => prev.filter((a) => a.id !== editingCash.id));
+    // Don't remove from DB -- account stays with balance=0 in closed section
     setCashModalOpen(false);
+  }
+
+  function handlePermanentDeleteCash(account) {
+    setCashAccounts((prev) => prev.filter((a) => a.id !== account.id));
   }
 
   // ---- Toggle benchmark line visibility ----
@@ -1501,6 +1533,44 @@ export default function FixedIncomeTab() {
         </div>
       </div>
 
+      {/* ---- Closed Bonds ---- */}
+      <ClosedPositionsSection
+        items={closedBonds}
+        title="Titulos Encerrados"
+        metrics={fiMetricsQuery.data}
+        metricsLoading={fiMetricsQuery.isLoading && fiMetricsEnabled}
+        onExpand={() => setFiMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDeleteBond}
+        columns={[
+          { label: 'Titulo', align: 'left' },
+          { label: 'Tipo', align: 'left' },
+          { label: 'Indexador', align: 'left' },
+          { label: 'Total Investido', align: 'right' },
+          { label: 'Total Resgatado', align: 'right' },
+          { label: 'Resultado', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+          { label: 'Tempo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.title}</td>
+            <td className="py-2 px-2 text-sm text-slate-400">{item.type}</td>
+            <td className="py-2 px-2 text-sm text-slate-400">{item.indexer}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : formatBRL(item.appliedValue)}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m ? formatTimeHeld(m.time_held_days) : '-'}
+            </td>
+          </>
+        )}
+      />
+
       {/* ===================== SECTION 2: ETFs DE RENDA FIXA ===================== */}
       <div className="glass-card p-6">
         <div className="flex items-center gap-2 mb-5">
@@ -1531,7 +1601,7 @@ export default function FixedIncomeTab() {
               </tr>
             </thead>
             <tbody>
-              {fiEtfs.map((etf) => {
+              {activeEtfs.map((etf) => {
                 const total = etf.qty * (etf.currentPrice || 0);
                 const invested = etf.qty * (etf.avgPrice || 0);
                 const ret = invested > 0 ? ((total - invested) / invested) * 100 : 0;
@@ -1590,6 +1660,46 @@ export default function FixedIncomeTab() {
         </div>
       </div>
 
+      {/* ---- Closed ETFs ---- */}
+      <ClosedPositionsSection
+        items={closedEtfs}
+        title="ETFs Encerrados"
+        metrics={etfMetricsQuery.data}
+        metricsLoading={etfMetricsQuery.isLoading && etfMetricsEnabled}
+        onExpand={() => setEtfMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDeleteEtf}
+        columns={[
+          { label: 'Ticker', align: 'left' },
+          { label: 'Nome', align: 'left' },
+          { label: 'PM Compra', align: 'right' },
+          { label: 'PM Venda', align: 'right' },
+          { label: 'Resultado %', align: 'right' },
+          { label: 'Lucro/Prej.', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+          { label: 'Tempo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_buy_price) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_sell_price) : '-'}</td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m && m.total_cost > 0 ? formatPct(((m.total_proceeds - m.total_cost) / m.total_cost) * 100) : '-'}
+            </td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m ? formatTimeHeld(m.time_held_days) : '-'}
+            </td>
+          </>
+        )}
+      />
+
       {/* ===================== SECTION 3: CAIXA E CONTAS ===================== */}
       <div className="glass-card p-6">
         <div className="flex items-center gap-2 mb-5">
@@ -1617,7 +1727,7 @@ export default function FixedIncomeTab() {
               </tr>
             </thead>
             <tbody>
-              {cashAccounts.map((account) => (
+              {activeCash.map((account) => (
                 <tr
                   key={account.id}
                   onClick={() => handleEditCash(account)}
@@ -1658,6 +1768,36 @@ export default function FixedIncomeTab() {
           </table>
         </div>
       </div>
+
+      {/* ---- Closed Cash Accounts ---- */}
+      <ClosedPositionsSection
+        items={closedCash}
+        title="Contas Encerradas"
+        metrics={cashMetricsQuery.data}
+        metricsLoading={cashMetricsQuery.isLoading && cashMetricsEnabled}
+        onExpand={() => setCashMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDeleteCash}
+        columns={[
+          { label: 'Nome', align: 'left' },
+          { label: 'Tipo', align: 'left' },
+          { label: 'Instituicao', align: 'left' },
+          { label: 'Total Depositado', align: 'right' },
+          { label: 'Total Sacado', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.name}</td>
+            <td className="py-2 px-2 text-sm text-slate-400">{CASH_TYPE_LABELS[item.type] || item.type}</td>
+            <td className="py-2 px-2 text-sm text-slate-400">{item.institution}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+          </>
+        )}
+      />
 
       {/* ============= DISTRIBUTION PIE + MATURITY TIMELINE ============= */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

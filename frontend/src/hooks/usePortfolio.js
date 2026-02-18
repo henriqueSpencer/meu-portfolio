@@ -28,6 +28,7 @@ import {
   uploadBackupPreview,
   confirmBackupImport,
   updateSectors,
+  fetchClosedPositionMetrics,
 } from '../services/api';
 
 // ---------------------------------------------------------------------------
@@ -271,6 +272,19 @@ export function useBackupImport() {
   });
 
   return { preview, confirm };
+}
+
+// ---------------------------------------------------------------------------
+// Closed Position Metrics (lazy-loaded)
+// ---------------------------------------------------------------------------
+
+export function useClosedPositionMetrics(assetClass, enabled = false) {
+  return useQuery({
+    queryKey: ['closed-position-metrics', assetClass],
+    queryFn: () => fetchClosedPositionMetrics(assetClass),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,25 @@
+"""Add is_closed to fixed_income and real_assets
+
+Revision ID: 005
+Revises: 004
+Create Date: 2026-02-17
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+revision: str = "005"
+down_revision: Union[str, None] = "004"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.add_column("fixed_income", sa.Column("is_closed", sa.Boolean, server_default="false", nullable=False))
+    op.add_column("real_assets", sa.Column("is_closed", sa.Boolean, server_default="false", nullable=False))
+
+
+def downgrade() -> None:
+    op.drop_column("real_assets", "is_closed")
+    op.drop_column("fixed_income", "is_closed")

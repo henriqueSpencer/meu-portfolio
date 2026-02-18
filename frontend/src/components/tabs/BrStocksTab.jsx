@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
+import { useClosedPositionMetrics } from '../../hooks/usePortfolio';
 import {
   grahamFairPrice,
   bazinFairPrice,
@@ -10,9 +11,10 @@ import {
   priceIndicator,
   returnPct,
 } from '../../utils/calculations';
-import { formatBRL, formatCurrency, formatPct, colorClass } from '../../utils/formatters';
+import { formatBRL, formatCurrency, formatPct, formatTimeHeld, colorClass } from '../../utils/formatters';
 import { SECTOR_COLORS } from '../../data/mockData';
 import FormModal, { FormField, FormInput } from '../FormModal';
+import ClosedPositionsSection from '../ClosedPositionsSection';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -184,8 +186,12 @@ function BrStocksTab() {
         notes: 'Encerramento de posicao via aba RV Brasil',
       });
     }
-    setBrStocks((prev) => prev.filter((s) => s.ticker !== editingStock.ticker));
+    // Don't remove from DB -- asset stays with qty=0 in closed section
     setStockModalOpen(false);
+  }
+
+  function handlePermanentDeleteStock(stock) {
+    setBrStocks((prev) => prev.filter((s) => s.ticker !== stock.ticker));
   }
 
   // ---- FII CRUD handlers ----
@@ -278,9 +284,19 @@ function BrStocksTab() {
         notes: 'Encerramento de posicao via aba RV Brasil',
       });
     }
-    setFiis((prev) => prev.filter((f) => f.ticker !== editingFii.ticker));
+    // Don't remove from DB -- asset stays with qty=0 in closed section
     setFiiModalOpen(false);
   }
+
+  function handlePermanentDeleteFii(fii) {
+    setFiis((prev) => prev.filter((f) => f.ticker !== fii.ticker));
+  }
+
+  // ---- Closed position metrics (lazy) ----
+  const [stockMetricsEnabled, setStockMetricsEnabled] = useState(false);
+  const [fiiMetricsEnabled, setFiiMetricsEnabled] = useState(false);
+  const stockMetricsQuery = useClosedPositionMetrics('br_stock', stockMetricsEnabled);
+  const fiiMetricsQuery = useClosedPositionMetrics('fii', fiiMetricsEnabled);
 
   // ---- Filtered lists ----
   const filteredStocks = useMemo(
@@ -299,10 +315,16 @@ function BrStocksTab() {
     [fiis, brokerFilter],
   );
 
+  // ---- Active / Closed split ----
+  const activeStocks = useMemo(() => filteredStocks.filter((s) => (s.qty || 0) > 0), [filteredStocks]);
+  const closedStocks = useMemo(() => filteredStocks.filter((s) => (s.qty || 0) === 0), [filteredStocks]);
+  const activeFiis = useMemo(() => filteredFiis.filter((f) => (f.qty || 0) > 0), [filteredFiis]);
+  const closedFiis = useMemo(() => filteredFiis.filter((f) => (f.qty || 0) === 0), [filteredFiis]);
+
   // ---- Enriched stock rows (fair prices, discount, return) ----
   const stockRows = useMemo(
     () =>
-      filteredStocks.map((stock) => {
+      activeStocks.map((stock) => {
         const graham = grahamFairPrice(stock.lpa, stock.vpa);
         const bazin = bazinFairPrice(stock.dividends5y);
         const fairCandidates = [graham, bazin].filter(Boolean);
@@ -327,7 +349,7 @@ function BrStocksTab() {
           profitLoss,
         };
       }),
-    [filteredStocks],
+    [activeStocks],
   );
 
   // ---- Stocks totals ----
@@ -342,14 +364,14 @@ function BrStocksTab() {
   // ---- Enriched FII rows ----
   const fiiRows = useMemo(
     () =>
-      filteredFiis.map((fii) => {
+      activeFiis.map((fii) => {
         const ret = returnPct(fii.currentPrice, fii.avgPrice);
         const position = fii.qty * fii.currentPrice;
         const cost = fii.qty * fii.avgPrice;
         const profitLoss = position - cost;
         return { ...fii, ret, position, cost, profitLoss };
       }),
-    [filteredFiis],
+    [activeFiis],
   );
 
   // ---- FII totals ----
@@ -393,7 +415,7 @@ function BrStocksTab() {
               Acoes
             </h2>
             <span className="text-xs text-slate-500 ml-1">
-              ({filteredStocks.length} ativos)
+              ({activeStocks.length} ativos)
             </span>
             <button
               onClick={handleAddStock}
@@ -567,6 +589,50 @@ function BrStocksTab() {
         </div>
       </section>
 
+      {/* ---- Closed Stocks ---- */}
+      <ClosedPositionsSection
+        items={closedStocks}
+        title="Acoes Encerradas"
+        metrics={stockMetricsQuery.data}
+        metricsLoading={stockMetricsQuery.isLoading && stockMetricsEnabled}
+        onExpand={() => setStockMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDeleteStock}
+        columns={[
+          { label: 'Ticker', align: 'left' },
+          { label: 'Nome', align: 'left' },
+          { label: 'PM Compra', align: 'right' },
+          { label: 'PM Venda', align: 'right' },
+          { label: 'Resultado %', align: 'right' },
+          { label: 'Lucro/Prej.', align: 'right' },
+          { label: 'Dividendos', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+          { label: 'Tempo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_buy_price) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_sell_price) : '-'}</td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m && m.total_cost > 0 ? formatPct(((m.total_proceeds - m.total_cost) / m.total_cost) * 100) : '-'}
+            </td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-emerald-400 text-right tabular-nums whitespace-nowrap">
+              {m && m.total_dividends > 0 ? formatBRL(m.total_dividends) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m ? formatTimeHeld(m.time_held_days) : '-'}
+            </td>
+          </>
+        )}
+      />
+
       {/* ---------------------------------------------------------------- */}
       {/* FIIs SECTION                                                     */}
       {/* ---------------------------------------------------------------- */}
@@ -579,7 +645,7 @@ function BrStocksTab() {
             <TrendingUp className="w-5 h-5 text-purple-400" />
             <h2 className="text-lg font-semibold text-slate-100">FIIs</h2>
             <span className="text-xs text-slate-500 ml-1">
-              ({filteredFiis.length} ativos)
+              ({activeFiis.length} ativos)
             </span>
             <button
               onClick={handleAddFii}
@@ -752,6 +818,50 @@ function BrStocksTab() {
           </div>
         </div>
       </section>
+
+      {/* ---- Closed FIIs ---- */}
+      <ClosedPositionsSection
+        items={closedFiis}
+        title="FIIs Encerrados"
+        metrics={fiiMetricsQuery.data}
+        metricsLoading={fiiMetricsQuery.isLoading && fiiMetricsEnabled}
+        onExpand={() => setFiiMetricsEnabled(true)}
+        onPermanentDelete={handlePermanentDeleteFii}
+        columns={[
+          { label: 'Ticker', align: 'left' },
+          { label: 'Nome', align: 'left' },
+          { label: 'PM Compra', align: 'right' },
+          { label: 'PM Venda', align: 'right' },
+          { label: 'Resultado %', align: 'right' },
+          { label: 'Lucro/Prej.', align: 'right' },
+          { label: 'Dividendos', align: 'right' },
+          { label: 'Periodo', align: 'right' },
+          { label: 'Tempo', align: 'right' },
+        ]}
+        renderRow={(item, m) => (
+          <>
+            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_buy_price) : '-'}</td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_sell_price) : '-'}</td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m && m.total_cost > 0 ? formatPct(((m.total_proceeds - m.total_cost) / m.total_cost) * 100) : '-'}
+            </td>
+            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
+              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-emerald-400 text-right tabular-nums whitespace-nowrap">
+              {m && m.total_dividends > 0 ? formatBRL(m.total_dividends) : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+            </td>
+            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+              {m ? formatTimeHeld(m.time_held_days) : '-'}
+            </td>
+          </>
+        )}
+      />
 
       {/* ---------------------------------------------------------------- */}
       {/* SECTOR PIE CHART                                                 */}
