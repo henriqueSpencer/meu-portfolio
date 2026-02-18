@@ -6,6 +6,7 @@ International tickers are used as-is (e.g. AAPL, MSFT).
 """
 
 import asyncio
+import math
 from concurrent.futures import ThreadPoolExecutor
 
 import yfinance as yf
@@ -60,10 +61,15 @@ def _fetch_quotes_sync(tickers: list[str], suffix: str = ".SA") -> list[dict]:
             if row is not None and not row.empty:
                 last = row.iloc[-1]
                 close = float(last.get("Close", 0))
+                if math.isnan(close):
+                    continue
+                prev = float(last.get("Open", close))
+                if math.isnan(prev):
+                    prev = close
                 results.append({
                     "symbol": original,
                     "regularMarketPrice": close,
-                    "regularMarketPreviousClose": float(last.get("Open", close)),
+                    "regularMarketPreviousClose": prev,
                 })
         except Exception:
             continue
