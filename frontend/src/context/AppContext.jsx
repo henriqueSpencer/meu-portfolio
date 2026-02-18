@@ -85,7 +85,8 @@ export function AppProvider({ children }) {
     ...brStocks.filter(s => (s.qty || 0) > 0).map(s => s.ticker),
     ...fiis.filter(f => (f.qty || 0) > 0).map(f => f.ticker),
     ...fiEtfs.filter(e => (e.qty || 0) > 0).map(e => e.ticker),
-  ], [brStocks, fiis, fiEtfs]);
+    ...watchlist.map(w => w.ticker),
+  ], [brStocks, fiis, fiEtfs, watchlist]);
 
   const intlTickers = useMemo(() => intlStocks.filter(s => (s.qty || 0) > 0).map(s => s.ticker), [intlStocks]);
 
@@ -161,6 +162,14 @@ export function AppProvider({ children }) {
     });
   }, [fiEtfs, livePriceMap]);
 
+  const liveWatchlist = useMemo(() => {
+    if (Object.keys(livePriceMap).length === 0) return watchlist;
+    return watchlist.map(w => {
+      const live = livePriceMap[w.ticker];
+      return live != null ? { ...w, currentPrice: live } : w;
+    });
+  }, [watchlist, livePriceMap]);
+
   const liveIntlStocks = useMemo(() => {
     const hasFund = Object.keys(intlFundMap).length > 0;
     if (!hasFund) return intlStocks;
@@ -229,8 +238,8 @@ export function AppProvider({ children }) {
   }, [dividends]);
 
   const watchlistAlerts = useMemo(
-    () => watchlist.filter(w => w.currentPrice <= w.targetPrice),
-    [watchlist]
+    () => liveWatchlist.filter(w => w.currentPrice > 0 && w.targetPrice > 0 && w.currentPrice <= w.targetPrice),
+    [liveWatchlist]
   );
 
   // ---------------------------------------------------------------------------
@@ -458,7 +467,7 @@ export function AppProvider({ children }) {
     cashAccounts, setCashAccounts,
     realAssets, setRealAssets,
     dividends, setDividends,
-    watchlist, setWatchlist,
+    watchlist: liveWatchlist, setWatchlist,
     targets, setTargets,
     accumulationGoals, setAccumulationGoals,
     transactions, transactionsCrud, createTransaction,

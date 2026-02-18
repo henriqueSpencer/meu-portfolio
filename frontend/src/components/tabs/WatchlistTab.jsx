@@ -24,7 +24,7 @@ const FILTERS = [
 // Main Component
 // ---------------------------------------------------------------------------
 const EMPTY_WATCHLIST = {
-  ticker: '', name: '', sector: '', currentPrice: '', fairPrice: '',
+  ticker: '', name: '', sector: '', fairPrice: '',
   targetPrice: '', status: 'Interesse',
 };
 
@@ -49,7 +49,6 @@ export default function WatchlistTab() {
       ticker: item.ticker,
       name: item.name,
       sector: item.sector || '',
-      currentPrice: String(item.currentPrice),
       fairPrice: String(item.fairPrice),
       targetPrice: String(item.targetPrice),
       status: item.status || 'Interesse',
@@ -62,7 +61,7 @@ export default function WatchlistTab() {
       ticker: form.ticker.toUpperCase().trim(),
       name: form.name.trim(),
       sector: form.sector.trim(),
-      currentPrice: Number(form.currentPrice) || 0,
+      currentPrice: editing?.currentPrice || 0,
       fairPrice: Number(form.fairPrice) || 0,
       targetPrice: Number(form.targetPrice) || 0,
       status: form.status,
@@ -83,8 +82,10 @@ export default function WatchlistTab() {
   }
 
   // ---- Derived: assets that hit the target price ----------------------------
+  const isOnSaleCheck = (w) => w.currentPrice > 0 && w.targetPrice > 0 && w.currentPrice <= w.targetPrice;
+
   const alerts = useMemo(
-    () => watchlist.filter((w) => w.currentPrice <= w.targetPrice),
+    () => watchlist.filter(isOnSaleCheck),
     [watchlist],
   );
 
@@ -92,7 +93,7 @@ export default function WatchlistTab() {
   const filteredList = useMemo(() => {
     switch (activeFilter) {
       case 'EmPromocao':
-        return watchlist.filter((w) => w.currentPrice <= w.targetPrice);
+        return watchlist.filter(isOnSaleCheck);
       case 'Interesse':
         return watchlist.filter((w) => w.status === 'Interesse');
       case 'Possui':
@@ -140,10 +141,10 @@ export default function WatchlistTab() {
             <div>
               <h3 className="text-sm font-semibold text-emerald-400">
                 {alerts.length} ativo{alerts.length > 1 ? 's' : ''}{' '}
-                atingiu{alerts.length > 1 ? 'ram' : ''} o preco-alvo!
+                atingiu{alerts.length > 1 ? 'ram' : ''} o preco maximo de compra!
               </h3>
               <p className="text-xs text-slate-400">
-                Esses ativos estao abaixo ou no preco-alvo definido.
+                Esses ativos estao com a cotacao abaixo ou igual ao preco maximo que voce definiu.
               </p>
             </div>
           </div>
@@ -166,7 +167,7 @@ export default function WatchlistTab() {
                     </span>
                   </p>
                   <p className="text-xs text-slate-400">
-                    Alvo:{' '}
+                    Max. Compra:{' '}
                     <span className="text-slate-200 font-medium">
                       {formatBRL(a.targetPrice)}
                     </span>
@@ -223,16 +224,16 @@ export default function WatchlistTab() {
                   Setor
                 </th>
                 <th className="text-right text-slate-400 font-medium px-5 py-3">
-                  Preco Atual
+                  Cotacao
                 </th>
                 <th className="text-right text-slate-400 font-medium px-5 py-3 hidden lg:table-cell">
-                  Preco Justo
+                  Valor Justo
                 </th>
                 <th className="text-right text-slate-400 font-medium px-5 py-3 hidden lg:table-cell">
-                  Preco-Alvo
+                  Preco Max. Compra
                 </th>
                 <th className="text-right text-slate-400 font-medium px-5 py-3">
-                  Desconto
+                  Margem
                 </th>
                 <th className="text-center text-slate-400 font-medium px-5 py-3">
                   Status
@@ -254,7 +255,7 @@ export default function WatchlistTab() {
                 </tr>
               ) : (
                 filteredList.map((item, idx) => {
-                  const isOnSale = item.currentPrice <= item.targetPrice;
+                  const isOnSale = isOnSaleCheck(item);
                   const discount = calcDiscount(
                     item.currentPrice,
                     item.fairPrice,
@@ -302,9 +303,9 @@ export default function WatchlistTab() {
                         </span>
                       </td>
 
-                      {/* Current Price */}
+                      {/* Cotacao (auto-fetched) */}
                       <td className="text-right px-5 py-3.5 text-slate-200 font-medium tabular-nums">
-                        {formatBRL(item.currentPrice)}
+                        {item.currentPrice > 0 ? formatBRL(item.currentPrice) : <span className="text-slate-500">--</span>}
                       </td>
 
                       {/* Fair Price */}
@@ -413,15 +414,12 @@ export default function WatchlistTab() {
         <FormField label="Setor">
           <FormInput value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} placeholder="Energia Eletrica" />
         </FormField>
-        <div className="grid grid-cols-3 gap-4">
-          <FormField label="Preco Atual">
-            <FormInput type="number" step="0.01" value={form.currentPrice} onChange={(e) => setForm((f) => ({ ...f, currentPrice: e.target.value }))} />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Valor Justo (Valuation)" hint="Valor intrinseco estimado por analise fundamentalista (ex: Graham, Bazin, Fluxo de Caixa Descontado). Usado para calcular o desconto/premio do ativo.">
+            <FormInput type="number" step="0.01" value={form.fairPrice} onChange={(e) => setForm((f) => ({ ...f, fairPrice: e.target.value }))} placeholder="0.00" />
           </FormField>
-          <FormField label="Preco Justo">
-            <FormInput type="number" step="0.01" value={form.fairPrice} onChange={(e) => setForm((f) => ({ ...f, fairPrice: e.target.value }))} />
-          </FormField>
-          <FormField label="Preco-Alvo">
-            <FormInput type="number" step="0.01" value={form.targetPrice} onChange={(e) => setForm((f) => ({ ...f, targetPrice: e.target.value }))} />
+          <FormField label="Preco Maximo de Compra" hint="Preco limite que voce esta disposto a pagar. Quando a cotacao cair ate esse valor, um alerta sera disparado.">
+            <FormInput type="number" step="0.01" value={form.targetPrice} onChange={(e) => setForm((f) => ({ ...f, targetPrice: e.target.value }))} placeholder="0.00" />
           </FormField>
         </div>
       </FormModal>
