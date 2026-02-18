@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { Home, Car, Package, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
+import { Home, Car, Gem, ToggleLeft, ToggleRight, Plus, ShoppingCart, TrendingDown, X } from 'lucide-react';
 import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 
 // ---------------------------------------------------------------------------
@@ -15,28 +15,159 @@ const GLASS =
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Map stored type values to display labels with proper Portuguese. */
+const TYPE_LABELS = { Imovel: 'Imovel', Veiculo: 'Veiculo', Outro: 'Outro' };
+
 /** Return the appropriate Lucide icon component for a given asset type. */
 function assetIcon(type) {
   switch (type) {
-    case 'Imóvel':
+    case 'Imovel':
       return Home;
-    case 'Veículo':
+    case 'Veiculo':
       return Car;
     default:
-      return Package;
+      return Gem;
   }
 }
 
 /** Return a background tint class for the icon badge based on asset type. */
 function iconBadgeClass(type) {
   switch (type) {
-    case 'Imóvel':
+    case 'Imovel':
       return 'bg-violet-500/20 text-violet-400';
-    case 'Veículo':
+    case 'Veiculo':
       return 'bg-cyan-500/20 text-cyan-400';
     default:
       return 'bg-amber-500/20 text-amber-400';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Buy / Sell Sub-Modal
+// ---------------------------------------------------------------------------
+function BuySellModal({ isOpen, onClose, mode, asset, onConfirm }) {
+  const [value, setValue] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState('');
+
+  if (!isOpen || !asset) return null;
+
+  const isBuy = mode === 'compra';
+  const title = isBuy ? 'Registrar Compra' : 'Registrar Venda';
+  const maxSell = asset.estimatedValue || 0;
+  const numValue = Number(value) || 0;
+  const isFullSale = !isBuy && numValue > 0 && numValue >= maxSell;
+
+  function handleConfirm() {
+    if (numValue <= 0) return;
+    if (!isBuy && numValue > maxSell) return;
+    onConfirm({ value: numValue, date, notes: notes.trim(), deleteAsset: isFullSale });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="glass-card relative z-10 mx-4 w-full max-w-md shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div className="flex items-center gap-2">
+            {isBuy ? (
+              <ShoppingCart className="h-5 w-5 text-emerald-400" />
+            ) : (
+              <TrendingDown className="h-5 w-5 text-red-400" />
+            )}
+            <h3 className="text-lg font-semibold text-slate-100">{title}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-4 space-y-4">
+          <p className="text-sm text-slate-400">
+            {asset.description}
+            {!isBuy && (
+              <span className="ml-2 text-xs text-slate-500">
+                (Valor atual: {formatCurrency(maxSell, 'BRL', 1)})
+              </span>
+            )}
+          </p>
+
+          <FormField label="Valor da Operacao">
+            <FormInput
+              type="number"
+              step="0.01"
+              min="0"
+              max={!isBuy ? maxSell : undefined}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="0.00"
+              autoFocus
+            />
+          </FormField>
+
+          <FormField label="Data">
+            <FormInput
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </FormField>
+
+          <FormField label="Notas (opcional)">
+            <FormInput
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Descricao da operacao..."
+            />
+          </FormField>
+
+          {isFullSale && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
+              Venda total detectada. O ativo sera excluido apos a confirmacao.
+            </div>
+          )}
+
+          {!isBuy && numValue > maxSell && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+              O valor de venda nao pode exceder o valor atual do ativo.
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-white/10 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={numValue <= 0 || (!isBuy && numValue > maxSell)}
+            className={`rounded-lg px-5 py-2 text-sm font-medium text-white transition disabled:opacity-40 disabled:cursor-not-allowed ${
+              isBuy
+                ? 'bg-emerald-600 hover:bg-emerald-500'
+                : 'bg-red-600 hover:bg-red-500'
+            }`}
+          >
+            {isBuy ? 'Confirmar Compra' : 'Confirmar Venda'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +187,11 @@ export default function RealAssetsTab() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_ASSET);
 
+  // ---- Buy/Sell sub-modal state ----
+  const [buySellOpen, setBuySellOpen] = useState(false);
+  const [buySellMode, setBuySellMode] = useState('compra');
+  const [buySellAsset, setBuySellAsset] = useState(null);
+
   function handleAdd() {
     setEditing(null);
     setForm(EMPTY_ASSET);
@@ -74,6 +210,44 @@ export default function RealAssetsTab() {
     setModalOpen(true);
   }
 
+  function openBuySell(asset, mode, e) {
+    if (e) e.stopPropagation();
+    setBuySellAsset(asset);
+    setBuySellMode(mode);
+    setBuySellOpen(true);
+  }
+
+  async function handleBuySellConfirm({ value, date, notes, deleteAsset }) {
+    const asset = buySellAsset;
+    const isBuy = buySellMode === 'compra';
+
+    await createTransaction({
+      date,
+      operationType: buySellMode,
+      assetClass: 'real_asset',
+      assetId: asset.id,
+      assetName: asset.description,
+      totalValue: value,
+      notes: notes || (isBuy ? 'Compra via aba Imobilizado' : 'Venda via aba Imobilizado'),
+    });
+
+    if (deleteAsset) {
+      setRealAssets((prev) => prev.filter((a) => a.id !== asset.id));
+    } else {
+      const newValue = isBuy
+        ? (asset.estimatedValue || 0) + value
+        : (asset.estimatedValue || 0) - value;
+      setRealAssets((prev) =>
+        prev.map((a) =>
+          a.id === asset.id ? { ...a, estimatedValue: Math.max(0, newValue) } : a,
+        ),
+      );
+    }
+
+    setBuySellOpen(false);
+    setModalOpen(false);
+  }
+
   async function handleSave() {
     const parsed = {
       id: editing ? editing.id : String(Date.now()),
@@ -86,21 +260,15 @@ export default function RealAssetsTab() {
     if (!parsed.description) return;
     const today = new Date().toISOString().slice(0, 10);
     if (editing) {
-      const oldVal = editing.estimatedValue || 0;
-      const newVal = parsed.estimatedValue;
-      const delta = newVal - oldVal;
-      setRealAssets((prev) => prev.map((a) => (a.id === editing.id ? parsed : a)));
-      if (delta !== 0) {
-        await createTransaction({
-          date: today,
-          operationType: delta > 0 ? 'compra' : 'venda',
-          assetClass: 'real_asset',
-          assetId: parsed.id,
-          assetName: parsed.description,
-          totalValue: Math.abs(delta),
-          notes: 'Ajuste via aba Imobilizado',
-        });
-      }
+      // Edit mode: only save metadata (description, type, date, includeInTotal)
+      // Value changes are handled via explicit buy/sell flow
+      setRealAssets((prev) =>
+        prev.map((a) =>
+          a.id === editing.id
+            ? { ...a, description: parsed.description, type: parsed.type, acquisitionDate: parsed.acquisitionDate, includeInTotal: parsed.includeInTotal }
+            : a,
+        ),
+      );
     } else {
       const assetData = { ...parsed, estimatedValue: 0 };
       await realAssetsCrud.create.mutateAsync(toSnakeCase(assetData, 'realAsset'));
@@ -233,18 +401,40 @@ export default function RealAssetsTab() {
                 className={`${GLASS} glass-card-hover p-5 transition-colors cursor-pointer`}
               >
                 {/* Card header: icon + description */}
-                <div className="mb-4 flex items-start gap-3">
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${badgeCls}`}
-                  >
-                    <Icon size={20} />
+                <div className="mb-4 flex items-start justify-between">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${badgeCls}`}
+                    >
+                      <Icon size={20} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-bold text-white">
+                        {asset.description}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {TYPE_LABELS[asset.type] || asset.type}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <p className="truncate text-base font-bold text-white">
-                      {asset.description}
-                    </p>
-                    <p className="text-xs text-slate-400">{asset.type}</p>
+                  {/* Quick action buttons */}
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <button
+                      onClick={(e) => openBuySell(asset, 'compra', e)}
+                      title="Registrar Compra"
+                      className="rounded-lg p-1.5 text-emerald-400/60 transition hover:bg-emerald-500/15 hover:text-emerald-400"
+                    >
+                      <ShoppingCart size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => openBuySell(asset, 'venda', e)}
+                      title="Registrar Venda"
+                      className="rounded-lg p-1.5 text-red-400/60 transition hover:bg-red-500/15 hover:text-red-400"
+                    >
+                      <TrendingDown size={16} />
+                    </button>
                   </div>
                 </div>
 
@@ -310,6 +500,7 @@ export default function RealAssetsTab() {
           })}
         </div>
       )}
+
       {/* ---- CRUD Modal ---- */}
       <FormModal
         isOpen={modalOpen}
@@ -317,6 +508,7 @@ export default function RealAssetsTab() {
         title={editing ? `Editar ${editing.description}` : 'Adicionar Ativo Imobilizado'}
         onSave={handleSave}
         onDelete={editing ? handleDelete : undefined}
+        saveLabel={editing ? 'Salvar Dados' : 'Salvar'}
       >
         <FormField label="Descricao">
           <FormInput value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Apartamento 2Q - Belo Horizonte" />
@@ -329,9 +521,18 @@ export default function RealAssetsTab() {
               <option value="Outro">Outro</option>
             </FormSelect>
           </FormField>
-          <FormField label="Valor Estimado">
-            <FormInput type="number" step="0.01" value={form.estimatedValue} onChange={(e) => setForm((f) => ({ ...f, estimatedValue: e.target.value }))} />
-          </FormField>
+          {!editing && (
+            <FormField label="Valor Inicial">
+              <FormInput type="number" step="0.01" value={form.estimatedValue} onChange={(e) => setForm((f) => ({ ...f, estimatedValue: e.target.value }))} />
+            </FormField>
+          )}
+          {editing && (
+            <FormField label="Valor Atual">
+              <div className="flex items-center h-[38px] rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-slate-400">
+                {formatCurrency(editing.estimatedValue, 'BRL', 1)}
+              </div>
+            </FormField>
+          )}
         </div>
         <FormField label="Data de Aquisicao">
           <FormInput type="date" value={form.acquisitionDate} onChange={(e) => setForm((f) => ({ ...f, acquisitionDate: e.target.value }))} />
@@ -354,7 +555,41 @@ export default function RealAssetsTab() {
             </span>
           </div>
         </FormField>
+
+        {/* Buy/Sell action buttons (only in edit mode) */}
+        {editing && (
+          <div className="border-t border-white/10 pt-4 mt-2">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-400">
+              Operacoes
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => openBuySell(editing, 'compra')}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-400 transition hover:bg-emerald-500/20"
+              >
+                <ShoppingCart size={16} /> Registrar Compra
+              </button>
+              <button
+                type="button"
+                onClick={() => openBuySell(editing, 'venda')}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-500/20"
+              >
+                <TrendingDown size={16} /> Registrar Venda
+              </button>
+            </div>
+          </div>
+        )}
       </FormModal>
+
+      {/* ---- Buy/Sell Sub-Modal ---- */}
+      <BuySellModal
+        isOpen={buySellOpen}
+        onClose={() => setBuySellOpen(false)}
+        mode={buySellMode}
+        asset={buySellAsset}
+        onConfirm={handleBuySellConfirm}
+      />
     </section>
   );
 }
