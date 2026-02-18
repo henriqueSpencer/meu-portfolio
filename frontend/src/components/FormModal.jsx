@@ -85,13 +85,16 @@ export default function FormModal({
 /**
  * Campo de formulario reutilizavel.
  */
-export function FormField({ label, children, className = '' }) {
+export function FormField({ label, hint, children, className = '' }) {
   return (
     <div className={className}>
       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-400">
         {label}
       </label>
       {children}
+      {hint && (
+        <p className="mt-1 text-[10px] leading-tight text-slate-500">{hint}</p>
+      )}
     </div>
   );
 }
