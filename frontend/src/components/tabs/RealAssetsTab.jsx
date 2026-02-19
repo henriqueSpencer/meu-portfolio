@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { toSnakeCase } from '../../utils/apiHelpers';
 import { useClosedPositionMetrics } from '../../hooks/usePortfolio';
-import { formatCurrency, formatBRL, formatDate, formatTimeHeld, colorClass } from '../../utils/formatters';
+import { formatCurrency, formatBRL, formatPct, formatDate, formatTimeHeld, colorClass } from '../../utils/formatters';
 import { Home, Car, Gem, ToggleLeft, ToggleRight, Plus, ShoppingCart, TrendingDown, X } from 'lucide-react';
 import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 import ClosedPositionsSection from '../ClosedPositionsSection';
@@ -529,26 +529,34 @@ export default function RealAssetsTab() {
           { label: 'Valor Aquisicao', align: 'right' },
           { label: 'Valor Venda', align: 'right' },
           { label: 'Resultado', align: 'right' },
+          { label: 'Resultado %', align: 'right' },
           { label: 'Periodo', align: 'right' },
           { label: 'Tempo', align: 'right' },
         ]}
-        renderRow={(item, m) => (
-          <>
-            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.description}</td>
-            <td className="py-2 px-2 text-sm text-slate-400">{item.type}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : '-'}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
-            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
-              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
-              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
-              {m ? formatTimeHeld(m.time_held_days) : '-'}
-            </td>
-          </>
-        )}
+        renderRow={(item, m) => {
+          const profit = m ? m.total_proceeds - m.total_cost : 0;
+          const profitPct = m && m.total_cost > 0 ? (profit / m.total_cost) * 100 : 0;
+          return (
+            <>
+              <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.description}</td>
+              <td className="py-2 px-2 text-sm text-slate-400">{item.type}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : '-'}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(profit) : 'text-slate-400'}`}>
+                {m ? formatBRL(profit) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(profit) : 'text-slate-400'}`}>
+                {m ? formatPct(profitPct) : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+                {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+                {m ? formatTimeHeld(m.time_held_days) : '-'}
+              </td>
+            </>
+          );
+        }}
       />
 
       {/* ---- CRUD Modal ---- */}

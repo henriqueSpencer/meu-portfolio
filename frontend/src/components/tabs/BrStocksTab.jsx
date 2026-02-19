@@ -600,37 +600,53 @@ function BrStocksTab() {
         columns={[
           { label: 'Ticker', align: 'left' },
           { label: 'Nome', align: 'left' },
-          { label: 'PM Compra', align: 'right' },
-          { label: 'PM Venda', align: 'right' },
-          { label: 'Resultado %', align: 'right' },
+          { label: 'Qtd', align: 'right' },
+          { label: 'Total Compra', align: 'right' },
+          { label: 'Total Venda', align: 'right' },
           { label: 'Lucro/Prej.', align: 'right' },
+          { label: 'Lucro %', align: 'right' },
           { label: 'Dividendos', align: 'right' },
+          { label: 'Lucro c/ Div', align: 'right' },
+          { label: 'Lucro c/ Div %', align: 'right' },
           { label: 'Periodo', align: 'right' },
           { label: 'Tempo', align: 'right' },
         ]}
-        renderRow={(item, m) => (
-          <>
-            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_buy_price) : '-'}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_sell_price) : '-'}</td>
-            <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
-              {m && m.total_cost > 0 ? formatPct(((m.total_proceeds - m.total_cost) / m.total_cost) * 100) : '-'}
-            </td>
-            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
-              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-emerald-400 text-right tabular-nums whitespace-nowrap">
-              {m && m.total_dividends > 0 ? formatBRL(m.total_dividends) : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
-              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
-              {m ? formatTimeHeld(m.time_held_days) : '-'}
-            </td>
-          </>
-        )}
+        renderRow={(item, m) => {
+          const profit = m ? m.total_proceeds - m.total_cost : 0;
+          const profitPct = m && m.total_cost > 0 ? (profit / m.total_cost) * 100 : 0;
+          const profitWithDiv = m ? profit + (m.total_dividends || 0) : 0;
+          const profitWithDivPct = m && m.total_cost > 0 ? (profitWithDiv / m.total_cost) * 100 : 0;
+          return (
+            <>
+              <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums">{m ? m.total_bought_qty : '-'}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : '-'}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(profit) : 'text-slate-400'}`}>
+                {m ? formatBRL(profit) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(profit) : 'text-slate-400'}`}>
+                {m ? formatPct(profitPct) : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-emerald-400 text-right tabular-nums whitespace-nowrap">
+                {m && m.total_dividends > 0 ? formatBRL(m.total_dividends) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(profitWithDiv) : 'text-slate-400'}`}>
+                {m ? formatBRL(profitWithDiv) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(profitWithDiv) : 'text-slate-400'}`}>
+                {m ? formatPct(profitWithDivPct) : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+                {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+                {m ? formatTimeHeld(m.time_held_days) : '-'}
+              </td>
+            </>
+          );
+        }}
       />
 
       {/* ---------------------------------------------------------------- */}
@@ -830,37 +846,53 @@ function BrStocksTab() {
         columns={[
           { label: 'Ticker', align: 'left' },
           { label: 'Nome', align: 'left' },
-          { label: 'PM Compra', align: 'right' },
-          { label: 'PM Venda', align: 'right' },
-          { label: 'Resultado %', align: 'right' },
+          { label: 'Qtd', align: 'right' },
+          { label: 'Total Compra', align: 'right' },
+          { label: 'Total Venda', align: 'right' },
           { label: 'Lucro/Prej.', align: 'right' },
+          { label: 'Lucro %', align: 'right' },
           { label: 'Dividendos', align: 'right' },
+          { label: 'Lucro c/ Div', align: 'right' },
+          { label: 'Lucro c/ Div %', align: 'right' },
           { label: 'Periodo', align: 'right' },
           { label: 'Tempo', align: 'right' },
         ]}
-        renderRow={(item, m) => (
-          <>
-            <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_buy_price) : '-'}</td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.avg_sell_price) : '-'}</td>
-            <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
-              {m && m.total_cost > 0 ? formatPct(((m.total_proceeds - m.total_cost) / m.total_cost) * 100) : '-'}
-            </td>
-            <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(m.total_proceeds - m.total_cost) : 'text-slate-400'}`}>
-              {m ? formatBRL(m.total_proceeds - m.total_cost) : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-emerald-400 text-right tabular-nums whitespace-nowrap">
-              {m && m.total_dividends > 0 ? formatBRL(m.total_dividends) : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
-              {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
-            </td>
-            <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
-              {m ? formatTimeHeld(m.time_held_days) : '-'}
-            </td>
-          </>
-        )}
+        renderRow={(item, m) => {
+          const profit = m ? m.total_proceeds - m.total_cost : 0;
+          const profitPct = m && m.total_cost > 0 ? (profit / m.total_cost) * 100 : 0;
+          const profitWithDiv = m ? profit + (m.total_dividends || 0) : 0;
+          const profitWithDivPct = m && m.total_cost > 0 ? (profitWithDiv / m.total_cost) * 100 : 0;
+          return (
+            <>
+              <td className="py-2 px-2 text-sm font-bold text-slate-300">{item.ticker}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 whitespace-nowrap">{item.name}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums">{m ? m.total_bought_qty : '-'}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_cost) : '-'}</td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right tabular-nums whitespace-nowrap">{m ? formatBRL(m.total_proceeds) : '-'}</td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(profit) : 'text-slate-400'}`}>
+                {m ? formatBRL(profit) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(profit) : 'text-slate-400'}`}>
+                {m ? formatPct(profitPct) : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-emerald-400 text-right tabular-nums whitespace-nowrap">
+                {m && m.total_dividends > 0 ? formatBRL(m.total_dividends) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums whitespace-nowrap font-medium ${m ? colorClass(profitWithDiv) : 'text-slate-400'}`}>
+                {m ? formatBRL(profitWithDiv) : '-'}
+              </td>
+              <td className={`py-2 px-2 text-sm text-right tabular-nums font-medium ${m ? colorClass(profitWithDiv) : 'text-slate-400'}`}>
+                {m ? formatPct(profitWithDivPct) : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+                {m?.first_buy_date && m?.last_sell_date ? `${m.first_buy_date.slice(5).replace('-', '/')} - ${m.last_sell_date.slice(5).replace('-', '/')}` : '-'}
+              </td>
+              <td className="py-2 px-2 text-sm text-slate-400 text-right whitespace-nowrap">
+                {m ? formatTimeHeld(m.time_held_days) : '-'}
+              </td>
+            </>
+          );
+        }}
       />
 
       {/* ---------------------------------------------------------------- */}
