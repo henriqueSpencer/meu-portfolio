@@ -376,9 +376,25 @@ export function AppProvider({ children }) {
   const setTargets = useCallback((updater) => {
     const prev = targets;
     const next = typeof updater === 'function' ? updater(prev) : updater;
-    for (const item of next) {
+    const prevIds = new Set(prev.map(t => t.id));
+    const nextIds = new Set(next.filter(t => t.id).map(t => t.id));
+    // Create new items (no id)
+    for (const item of next.filter(t => !t.id)) {
+      targetsCrud.create.mutate({
+        asset_class: item.assetClass,
+        target: item.target,
+        target_type: item.targetType || 'percentage',
+        icon: item.icon || '',
+      });
+    }
+    // Delete removed items
+    for (const item of prev.filter(t => !nextIds.has(t.id))) {
+      targetsCrud.remove.mutate(item.id);
+    }
+    // Update changed items
+    for (const item of next.filter(t => t.id && prevIds.has(t.id))) {
       const old = prev.find(t => t.id === item.id);
-      if (old && JSON.stringify(old) !== JSON.stringify(item)) {
+      if (JSON.stringify(old) !== JSON.stringify(item)) {
         targetsCrud.update.mutate({
           id: item.id,
           data: {

@@ -22,6 +22,8 @@ import {
   Shield,
   Wallet,
   Info,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -57,7 +59,7 @@ function ChartTooltip({ active, payload, label }) {
 function RowTooltip({ row }) {
   if (!row.tooltipText) return null;
   return (
-    <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 glass-card px-4 py-3 text-xs shadow-xl pointer-events-none">
+    <div className="absolute z-30 top-full left-1/2 -translate-x-1/2 mt-2 w-72 glass-card px-4 py-3 text-xs shadow-xl pointer-events-none">
       <p className="text-slate-200 font-medium mb-1">{row.className}</p>
       <p className="text-slate-400">{row.tooltipText}</p>
     </div>
@@ -73,6 +75,7 @@ export default function AllocationTab() {
   const [draft, setDraft] = useState([]);
   const [validationError, setValidationError] = useState('');
   const [hoveredRow, setHoveredRow] = useState(null);
+  const [newClassName, setNewClassName] = useState('');
 
   const total = allocation.total;
 
@@ -126,8 +129,25 @@ export default function AllocationTab() {
   // ------- Modal helpers -------
   function openModal() {
     setDraft(targets.map((t) => ({ ...t })));
+    setNewClassName('');
     setValidationError('');
     setIsOpen(true);
+  }
+
+  function addDraftRow() {
+    const name = newClassName.trim();
+    if (!name) return;
+    if (draft.some(d => d.assetClass.toLowerCase() === name.toLowerCase())) {
+      setValidationError('Essa classe ja existe.');
+      return;
+    }
+    setDraft([...draft, { assetClass: name, target: 0, targetType: 'percentage', icon: '' }]);
+    setNewClassName('');
+    setValidationError('');
+  }
+
+  function removeDraftRow(index) {
+    setDraft(draft.filter((_, i) => i !== index));
   }
 
   function handleDraftChange(index, field, value) {
@@ -194,8 +214,8 @@ export default function AllocationTab() {
       )}
 
       {/* ============== Table ============== */}
-      <div className="glass-card overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="glass-card overflow-visible">
+        <div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/10">
@@ -398,9 +418,37 @@ export default function AllocationTab() {
                         <span className="text-sm text-slate-400">%</span>
                       )}
                     </div>
+
+                    <button
+                      onClick={() => removeDraftRow(idx)}
+                      className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
+                      title="Remover classe"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 );
               })}
+
+              {/* Add new class */}
+              <div className="flex items-center gap-2 p-3 rounded-lg border border-dashed border-white/10">
+                <input
+                  type="text"
+                  placeholder="Nome da classe (ex: RV Brasil)"
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addDraftRow()}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 transition-colors"
+                />
+                <button
+                  onClick={addDraftRow}
+                  disabled={!newClassName.trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-4 h-4" />
+                  Adicionar
+                </button>
+              </div>
             </div>
 
             {/* Summary footer */}
