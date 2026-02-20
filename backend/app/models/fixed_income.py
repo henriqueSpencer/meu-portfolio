@@ -1,4 +1,4 @@
-from sqlalchemy import String, Float, Date, Boolean
+from sqlalchemy import String, Float, Date, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 import datetime
 
@@ -9,6 +9,7 @@ class FixedIncome(Base):
     __tablename__ = "fixed_income"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(120))
     type: Mapped[str] = mapped_column(String(30))
     rate: Mapped[str] = mapped_column(String(40))

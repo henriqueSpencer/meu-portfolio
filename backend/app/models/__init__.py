@@ -1,4 +1,6 @@
 from .base import Base
+from .user import User
+from .activity_log import ActivityLog
 from .br_stock import BrStock
 from .fii import Fii
 from .intl_stock import IntlStock
@@ -15,6 +17,8 @@ from .cash_account import CashAccount
 
 __all__ = [
     "Base",
+    "User",
+    "ActivityLog",
     "BrStock",
     "Fii",
     "IntlStock",

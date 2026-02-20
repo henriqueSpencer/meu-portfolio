@@ -5,8 +5,10 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
+from ..models.user import User
 from ..models.transaction import Transaction
 from ..models.dividend import Dividend
+from ..core.security import get_current_user
 
 router = APIRouter(prefix="/api/closed-position-metrics", tags=["closed-positions"])
 
@@ -40,12 +42,13 @@ SELL_OPS = {
 @router.get("")
 async def get_closed_position_metrics(
     asset_class: str = Query(..., description="Asset class: br_stock, fii, intl_stock, fi_etf, fixed_income, real_asset, cash_account"),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Fetch all transactions for this asset class
+    # Fetch all transactions for this asset class and user
     result = await db.execute(
         select(Transaction)
-        .where(Transaction.asset_class == asset_class)
+        .where(Transaction.user_id == user.id, Transaction.asset_class == asset_class)
         .order_by(Transaction.date)
     )
     transactions = result.scalars().all()
@@ -67,6 +70,7 @@ async def get_closed_position_metrics(
     if use_ticker:
         div_result = await db.execute(
             select(Dividend.ticker, func.sum(Dividend.value).label("total"))
+            .where(Dividend.user_id == user.id)
             .group_by(Dividend.ticker)
         )
         for row in div_result:

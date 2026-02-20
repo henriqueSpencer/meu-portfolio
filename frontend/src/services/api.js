@@ -5,6 +5,28 @@
 const BASE = '/api';
 
 // ---------------------------------------------------------------------------
+// Token management
+// ---------------------------------------------------------------------------
+
+function getAccessToken() {
+  return localStorage.getItem('accessToken');
+}
+
+function getRefreshToken() {
+  return localStorage.getItem('refreshToken');
+}
+
+export function setTokens(accessToken, refreshToken) {
+  localStorage.setItem('accessToken', accessToken);
+  if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
+}
+
+export function clearTokens() {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+}
+
+// ---------------------------------------------------------------------------
 // snake_case -> camelCase conversion
 // ---------------------------------------------------------------------------
 
@@ -23,22 +45,182 @@ function camelizeKeys(obj) {
 }
 
 // ---------------------------------------------------------------------------
+// Token refresh
+// ---------------------------------------------------------------------------
+
+let refreshPromise = null;
+
+async function tryRefreshToken() {
+  if (refreshPromise) return refreshPromise;
+
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      setTokens(data.access_token, null);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+// Callback for triggering re-login modal (set by AuthContext)
+let onAuthError = null;
+export function setOnAuthError(fn) {
+  onAuthError = fn;
+}
+
+// ---------------------------------------------------------------------------
 // Base request helper
 // ---------------------------------------------------------------------------
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  });
+  const token = getAccessToken();
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let res = await fetch(`${BASE}${path}`, { ...options, headers });
+
+  // Auto-refresh on 401
+  if (res.status === 401 && getRefreshToken()) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      headers['Authorization'] = `Bearer ${getAccessToken()}`;
+      res = await fetch(`${BASE}${path}`, { ...options, headers });
+    }
+  }
+
   if (res.status === 204) return null;
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `API ${res.status}: ${res.statusText}`);
+    const err = new Error(body.detail || `API ${res.status}: ${res.statusText}`);
+    err.status = res.status;
+    if (res.status === 401 && onAuthError) {
+      onAuthError();
+    }
+    throw err;
   }
   const data = await res.json();
   return options.raw ? data : camelizeKeys(data);
 }
+
+// Authenticated fetch for file uploads
+async function authFetch(url, options = {}) {
+  const token = getAccessToken();
+  const headers = { ...options.headers };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let res = await fetch(url, { ...options, headers });
+
+  // Auto-refresh on 401
+  if (res.status === 401 && getRefreshToken()) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      headers['Authorization'] = `Bearer ${getAccessToken()}`;
+      res = await fetch(url, { ...options, headers });
+    }
+  }
+
+  return res;
+}
+
+// ---------------------------------------------------------------------------
+// Auth API
+// ---------------------------------------------------------------------------
+
+export async function apiLogin(email, password) {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.detail || 'Login falhou');
+    err.status = res.status;
+    throw err;
+  }
+  return camelizeKeys(data);
+}
+
+export async function apiRegister(email, password, name) {
+  const res = await fetch(`${BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.detail || 'Cadastro falhou');
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+export async function apiGoogleAuth(credential) {
+  const res = await fetch(`${BASE}/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.detail || 'Google login falhou');
+    err.status = res.status;
+    throw err;
+  }
+  return camelizeKeys(data);
+}
+
+export async function apiVerifyEmail(token) {
+  return request(`/auth/verify-email?token=${token}`);
+}
+
+export async function apiGetMe() {
+  return request('/auth/me');
+}
+
+// ---------------------------------------------------------------------------
+// Admin API
+// ---------------------------------------------------------------------------
+
+export const usersApi = {
+  list: () => request('/users'),
+  listPending: () => request('/users/pending'),
+  update: (id, data) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  approve: (id) => request(`/users/${id}/approve`, { method: 'POST' }),
+  remove: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+};
+
+export const adminApi = {
+  metrics: () => request('/admin/metrics'),
+  logs: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.userId) qs.set('user_id', params.userId);
+    if (params.limit) qs.set('limit', params.limit);
+    if (params.offset) qs.set('offset', params.offset);
+    const q = qs.toString();
+    return request(`/admin/logs${q ? '?' + q : ''}`);
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Generic CRUD helpers
@@ -126,7 +308,7 @@ export async function fetchStaticData() {
 export async function uploadB3Preview(file) {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch(`${BASE}/import/b3/preview`, {
+  const res = await authFetch(`${BASE}/import/b3/preview`, {
     method: 'POST',
     body: formData,
   });
@@ -169,7 +351,7 @@ export async function confirmB3Import(rows) {
 export async function uploadB3MovPreview(file) {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch(`${BASE}/import/b3-mov/preview`, {
+  const res = await authFetch(`${BASE}/import/b3-mov/preview`, {
     method: 'POST',
     body: formData,
   });
@@ -213,7 +395,7 @@ export async function confirmB3MovImport(rows) {
 // ---------------------------------------------------------------------------
 
 export async function exportPortfolio() {
-  const res = await fetch(`${BASE}/portfolio/export`);
+  const res = await authFetch(`${BASE}/portfolio/export`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `API ${res.status}: ${res.statusText}`);
@@ -243,7 +425,7 @@ export async function resetPortfolio() {
 export async function uploadBackupPreview(file) {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await fetch(`${BASE}/import/backup/preview`, {
+  const res = await authFetch(`${BASE}/import/backup/preview`, {
     method: 'POST',
     body: formData,
   });

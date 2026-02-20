@@ -1,4 +1,4 @@
-from sqlalchemy import String, Float, Date, Integer, DateTime, func
+from sqlalchemy import String, Float, Date, Integer, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
 import datetime
 
@@ -9,6 +9,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     date: Mapped[datetime.date] = mapped_column(Date, index=True)
     operation_type: Mapped[str] = mapped_column(String(20))  # compra|venda|aporte|resgate|transferencia|desdobramento|bonificacao
     asset_class: Mapped[str] = mapped_column(String(20))  # br_stock|fii|intl_stock|fixed_income|real_asset

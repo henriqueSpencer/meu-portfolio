@@ -8,6 +8,8 @@ from openpyxl import load_workbook
 from io import BytesIO
 
 from ..database import get_db
+from ..core.security import get_current_user
+from ..models.user import User
 from ..models.transaction import Transaction
 from ..models.br_stock import BrStock
 from ..models.fii import Fii
@@ -122,6 +124,7 @@ def _parse_date(val) -> datetime.date:
 async def preview_b3(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Arquivo deve ser .xlsx")
@@ -191,7 +194,7 @@ async def preview_b3(
     wb.close()
 
     # --- Check duplicates against existing transactions ---
-    result = await db.execute(select(Transaction))
+    result = await db.execute(select(Transaction).where(Transaction.user_id == user.id))
     existing_txs = result.scalars().all()
     existing_keys = set()
     for tx in existing_txs:
@@ -205,13 +208,13 @@ async def preview_b3(
         existing_keys.add(key)
 
     # --- Check which assets exist ---
-    br_result = await db.execute(select(BrStock.ticker))
+    br_result = await db.execute(select(BrStock.ticker).where(BrStock.user_id == user.id))
     br_tickers = {r[0] for r in br_result.all()}
 
-    fii_result = await db.execute(select(Fii.ticker))
+    fii_result = await db.execute(select(Fii.ticker).where(Fii.user_id == user.id))
     fii_tickers = {r[0] for r in fii_result.all()}
 
-    etf_result = await db.execute(select(FiEtf.ticker))
+    etf_result = await db.execute(select(FiEtf.ticker).where(FiEtf.user_id == user.id))
     etf_tickers = {r[0] for r in etf_result.all()}
 
     asset_sets = {
@@ -259,6 +262,7 @@ async def preview_b3(
 async def confirm_b3(
     body: ImportConfirmRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     # Sort by date ASC for correct avg_price calculation
     sorted_rows = sorted(body.rows, key=lambda r: r.date)
@@ -268,11 +272,11 @@ async def confirm_b3(
     errors = []
 
     # Pre-load existing assets
-    br_result = await db.execute(select(BrStock.ticker))
+    br_result = await db.execute(select(BrStock.ticker).where(BrStock.user_id == user.id))
     br_tickers = {r[0] for r in br_result.all()}
-    fii_result = await db.execute(select(Fii.ticker))
+    fii_result = await db.execute(select(Fii.ticker).where(Fii.user_id == user.id))
     fii_tickers = {r[0] for r in fii_result.all()}
-    etf_result = await db.execute(select(FiEtf.ticker))
+    etf_result = await db.execute(select(FiEtf.ticker).where(FiEtf.user_id == user.id))
     etf_tickers = {r[0] for r in etf_result.all()}
 
     asset_sets = {
@@ -313,6 +317,7 @@ async def confirm_b3(
                         avg_price=0,
                         current_price=0,
                         broker=row.broker,
+                        user_id=user.id,
                     )
                     db.add(asset)
                 elif row.asset_class == "fii":
@@ -324,6 +329,7 @@ async def confirm_b3(
                         avg_price=0,
                         current_price=0,
                         broker=row.broker,
+                        user_id=user.id,
                     )
                     db.add(asset)
                 elif row.asset_class == "fi_etf":
@@ -334,6 +340,7 @@ async def confirm_b3(
                         avg_price=0,
                         current_price=0,
                         broker=row.broker,
+                        user_id=user.id,
                     )
                     db.add(asset)
 
@@ -354,12 +361,13 @@ async def confirm_b3(
                 broker=row.broker,
                 fees=0,
                 notes=f"Importado B3 - {row.market}",
+                user_id=user.id,
             )
             db.add(tx)
             await db.flush()
 
             # Apply position changes
-            await _apply(db, tx)
+            await _apply(db, tx, user.id)
             created_count += 1
 
         except Exception as e:

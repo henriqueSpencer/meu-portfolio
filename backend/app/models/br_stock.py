@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Float
+from sqlalchemy import String, Integer, Float, ForeignKey
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -8,6 +8,7 @@ from .base import Base
 class BrStock(Base):
     __tablename__ = "br_stocks"
 
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), primary_key=True)
     ticker: Mapped[str] = mapped_column(String(10), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     sector: Mapped[str] = mapped_column(String(60))

@@ -9,6 +9,8 @@ from io import BytesIO
 from pydantic import BaseModel
 
 from ..database import get_db
+from ..core.security import get_current_user
+from ..models.user import User
 from ..models.transaction import Transaction
 from ..models.br_stock import BrStock
 from ..models.fii import Fii
@@ -103,6 +105,7 @@ def _parse_val(val, col_name: str):
 async def preview_backup(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Arquivo deve ser .xlsx")
@@ -144,7 +147,7 @@ async def preview_backup(
     wb.close()
 
     # Check duplicates against existing transactions
-    result = await db.execute(select(Transaction))
+    result = await db.execute(select(Transaction).where(Transaction.user_id == user.id))
     existing_txs = result.scalars().all()
     existing_keys = set()
     for tx in existing_txs:
@@ -188,7 +191,7 @@ TICKER_CLASSES = {"br_stock", "fii", "intl_stock", "fi_etf"}
 ID_CLASSES = {"fixed_income", "cash_account", "real_asset"}
 
 
-def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
+def _make_asset(asset_class: str, row: BackupRow, user_id: int, asset_info_map: dict = None):
     """Create a minimal asset record from transaction data."""
     info = (asset_info_map or {}).get(row.ticker, {})
 
@@ -199,6 +202,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             sector=info.get("sector") or "A classificar",
             qty=0, avg_price=0, current_price=0,
             broker=row.broker,
+            user_id=user_id,
         )
     elif asset_class == "fii":
         return Fii(
@@ -207,6 +211,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             sector=info.get("sector") or "A classificar",
             qty=0, avg_price=0, current_price=0,
             broker=row.broker,
+            user_id=user_id,
         )
     elif asset_class == "fi_etf":
         return FiEtf(
@@ -214,6 +219,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             name=info.get("name") or row.asset_name or row.ticker,
             qty=0, avg_price=0, current_price=0,
             broker=row.broker,
+            user_id=user_id,
         )
     elif asset_class == "intl_stock":
         return IntlStock(
@@ -222,6 +228,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             sector=info.get("sector") or "A classificar",
             qty=0, avg_price_usd=0, current_price_usd=0,
             broker=row.broker,
+            user_id=user_id,
         )
     elif asset_class == "fixed_income":
         new_id = row.asset_id or str(uuid.uuid4())
@@ -235,6 +242,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             application_date=datetime.date.fromisoformat(row.date),
             maturity_date=datetime.date.fromisoformat(row.date) + datetime.timedelta(days=365),
             broker=row.broker,
+            user_id=user_id,
         ), new_id
     elif asset_class == "cash_account":
         new_id = row.asset_id or str(uuid.uuid4())
@@ -244,6 +252,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             type="conta_corrente",
             institution=row.broker,
             balance=0,
+            user_id=user_id,
         ), new_id
     elif asset_class == "real_asset":
         new_id = row.asset_id or str(uuid.uuid4())
@@ -253,6 +262,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
             type="Imovel",
             estimated_value=0,
             acquisition_date=datetime.date.fromisoformat(row.date),
+            user_id=user_id,
         ), new_id
     return None
 
@@ -261,6 +271,7 @@ def _make_asset(asset_class: str, row: BackupRow, asset_info_map: dict = None):
 async def confirm_backup(
     body: BackupConfirmRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     # Sort by date ASC for correct position calculation
     sorted_rows = sorted(body.rows, key=lambda r: r.date)
@@ -275,13 +286,13 @@ async def confirm_backup(
     for model, field in [
         (BrStock, "ticker"), (Fii, "ticker"), (IntlStock, "ticker"), (FiEtf, "ticker"),
     ]:
-        result = await db.execute(select(getattr(model, field)))
+        result = await db.execute(select(getattr(model, field)).where(model.user_id == user.id))
         existing_assets[model.__tablename__] = {r[0] for r in result.all()}
 
     for model, field in [
         (FixedIncome, "id"), (CashAccount, "id"), (RealAsset, "id"),
     ]:
-        result = await db.execute(select(getattr(model, field)))
+        result = await db.execute(select(getattr(model, field)).where(model.user_id == user.id))
         existing_assets[model.__tablename__] = {str(r[0]) for r in result.all()}
 
     TABLE_MAP = {
@@ -331,7 +342,7 @@ async def confirm_backup(
 
             # Auto-create asset if missing
             if asset_key and asset_key not in existing_assets.get(table_name, set()):
-                result = _make_asset(asset_class, row, asset_info_map)
+                result = _make_asset(asset_class, row, user.id, asset_info_map)
                 if result is None:
                     errors.append(f"Nao foi possivel criar ativo: {asset_class}/{asset_key}")
                     continue
@@ -371,12 +382,13 @@ async def confirm_backup(
                 broker_destination=row.broker_destination,
                 fees=row.fees or 0,
                 notes=row.notes,
+                user_id=user.id,
             )
             db.add(tx)
             await db.flush()
 
             # Apply position changes
-            await _apply(db, tx)
+            await _apply(db, tx, user.id)
             created_count += 1
 
         except Exception as e:

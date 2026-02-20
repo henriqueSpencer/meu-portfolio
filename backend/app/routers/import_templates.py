@@ -1,8 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from io import BytesIO
+
+from ..core.security import get_current_user
+from ..models.user import User
 
 router = APIRouter(prefix="/api/import/templates", tags=["import-templates"])
 
@@ -45,7 +48,7 @@ def _auto_width(ws):
 
 
 @router.get("/negociacao")
-async def template_negociacao():
+async def template_negociacao(user: User = Depends(get_current_user)):
     """Template for B3 negotiation statement (negociacao)."""
     wb = Workbook()
     ws = wb.active
@@ -89,7 +92,7 @@ async def template_negociacao():
 
 
 @router.get("/movimentacao")
-async def template_movimentacao():
+async def template_movimentacao(user: User = Depends(get_current_user)):
     """Template for B3 movimentacao statement."""
     wb = Workbook()
     ws = wb.active
@@ -134,7 +137,7 @@ async def template_movimentacao():
 
 
 @router.get("/backup")
-async def template_backup():
+async def template_backup(user: User = Depends(get_current_user)):
     """Template for backup import/restore."""
     wb = Workbook()
     ws = wb.active

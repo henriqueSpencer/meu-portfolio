@@ -3,17 +3,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
+from ..models.user import User
 from ..models.br_stock import BrStock
 from ..models.fii import Fii
 from ..models.intl_stock import IntlStock
 from ..services.yahoo import fetch_quotes, fetch_asset_info, fetch_fundamentals
 from ..services.bcb import fetch_exchange_rate, fetch_selic, fetch_cdi, fetch_ipca, fetch_historical_series
+from ..core.security import get_current_user
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 
 
 @router.get("/quotes")
-async def get_quotes(tickers: str = Query(..., description="Comma-separated tickers")):
+async def get_quotes(tickers: str = Query(..., description="Comma-separated tickers"), user: User = Depends(get_current_user)):
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
         raise HTTPException(400, "No tickers provided")
@@ -25,7 +27,7 @@ async def get_quotes(tickers: str = Query(..., description="Comma-separated tick
 
 
 @router.get("/quotes/intl")
-async def get_intl_quotes(tickers: str = Query(..., description="Comma-separated tickers")):
+async def get_intl_quotes(tickers: str = Query(..., description="Comma-separated tickers"), user: User = Depends(get_current_user)):
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
         raise HTTPException(400, "No tickers provided")
@@ -37,7 +39,7 @@ async def get_intl_quotes(tickers: str = Query(..., description="Comma-separated
 
 
 @router.get("/exchange-rate")
-async def get_exchange_rate():
+async def get_exchange_rate(user: User = Depends(get_current_user)):
     try:
         rate = await fetch_exchange_rate()
         return {"rate": rate}
@@ -46,7 +48,7 @@ async def get_exchange_rate():
 
 
 @router.get("/indicators")
-async def get_indicators():
+async def get_indicators(user: User = Depends(get_current_user)):
     errors = {}
     result = {}
     for name, fn in [("selic", fetch_selic), ("cdi", fetch_cdi), ("ipca", fetch_ipca)]:
@@ -60,20 +62,20 @@ async def get_indicators():
 
 
 @router.post("/update-sectors")
-async def update_sectors(db: AsyncSession = Depends(get_db)):
+async def update_sectors(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Fetch sectors from Yahoo Finance for all assets with 'A classificar'."""
     updated = []
 
     # BR stocks
-    result = await db.execute(select(BrStock).where(BrStock.sector == "A classificar"))
+    result = await db.execute(select(BrStock).where(BrStock.user_id == user.id, BrStock.sector == "A classificar"))
     br_stocks = result.scalars().all()
 
     # FIIs
-    result = await db.execute(select(Fii).where(Fii.sector == "A classificar"))
+    result = await db.execute(select(Fii).where(Fii.user_id == user.id, Fii.sector == "A classificar"))
     fiis = result.scalars().all()
 
     # Intl stocks
-    result = await db.execute(select(IntlStock).where(IntlStock.sector == "A classificar"))
+    result = await db.execute(select(IntlStock).where(IntlStock.user_id == user.id, IntlStock.sector == "A classificar"))
     intl_stocks = result.scalars().all()
 
     # Fetch info for BR tickers
@@ -119,6 +121,7 @@ async def update_sectors(db: AsyncSession = Depends(get_db)):
 async def get_fundamentals(
     tickers: str = Query(..., description="Comma-separated tickers"),
     market: str = Query("br", description="Market: 'br' (adds .SA suffix) or 'intl'"),
+    user: User = Depends(get_current_user),
 ):
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
@@ -136,6 +139,7 @@ async def get_historical_rates(
     series: str = Query(..., description="Comma-separated BCB series codes (e.g. 12,433,11)"),
     start: str = Query(..., description="Start date DD/MM/YYYY"),
     end: str = Query(..., description="End date DD/MM/YYYY"),
+    user: User = Depends(get_current_user),
 ):
     codes = []
     for s in series.split(","):

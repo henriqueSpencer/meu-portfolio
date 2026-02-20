@@ -2,25 +2,36 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.security import get_current_user
 from ..database import get_db
 from ..models.intl_stock import IntlStock
+from ..models.user import User
 from ..schemas.intl_stock import IntlStockCreate, IntlStockUpdate, IntlStockRead
 
 router = APIRouter(prefix="/api/intl-stocks", tags=["intl-stocks"])
 
 
 @router.get("", response_model=list[IntlStockRead])
-async def list_intl_stocks(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(IntlStock).order_by(IntlStock.ticker))
+async def list_intl_stocks(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(IntlStock).where(IntlStock.user_id == user.id).order_by(IntlStock.ticker)
+    )
     return result.scalars().all()
 
 
 @router.post("", response_model=IntlStockRead, status_code=201)
-async def create_intl_stock(data: IntlStockCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.get(IntlStock, data.ticker.upper())
+async def create_intl_stock(
+    data: IntlStockCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    existing = await db.get(IntlStock, (user.id, data.ticker.upper()))
     if existing:
         raise HTTPException(409, f"Ticker {data.ticker} already exists")
-    obj = IntlStock(**data.model_dump() | {"ticker": data.ticker.upper()})
+    obj = IntlStock(**data.model_dump() | {"ticker": data.ticker.upper(), "user_id": user.id})
     db.add(obj)
     await db.commit()
     await db.refresh(obj)
@@ -28,16 +39,25 @@ async def create_intl_stock(data: IntlStockCreate, db: AsyncSession = Depends(ge
 
 
 @router.get("/{ticker}", response_model=IntlStockRead)
-async def get_intl_stock(ticker: str, db: AsyncSession = Depends(get_db)):
-    obj = await db.get(IntlStock, ticker.upper())
+async def get_intl_stock(
+    ticker: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    obj = await db.get(IntlStock, (user.id, ticker.upper()))
     if not obj:
         raise HTTPException(404, f"Ticker {ticker} not found")
     return obj
 
 
 @router.put("/{ticker}", response_model=IntlStockRead)
-async def update_intl_stock(ticker: str, data: IntlStockUpdate, db: AsyncSession = Depends(get_db)):
-    obj = await db.get(IntlStock, ticker.upper())
+async def update_intl_stock(
+    ticker: str,
+    data: IntlStockUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    obj = await db.get(IntlStock, (user.id, ticker.upper()))
     if not obj:
         raise HTTPException(404, f"Ticker {ticker} not found")
     for key, val in data.model_dump().items():
@@ -48,8 +68,12 @@ async def update_intl_stock(ticker: str, data: IntlStockUpdate, db: AsyncSession
 
 
 @router.delete("/{ticker}", status_code=204)
-async def delete_intl_stock(ticker: str, db: AsyncSession = Depends(get_db)):
-    obj = await db.get(IntlStock, ticker.upper())
+async def delete_intl_stock(
+    ticker: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    obj = await db.get(IntlStock, (user.id, ticker.upper()))
     if not obj:
         raise HTTPException(404, f"Ticker {ticker} not found")
     await db.delete(obj)

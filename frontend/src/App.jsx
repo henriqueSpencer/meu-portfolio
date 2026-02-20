@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useApp } from './context/AppContext';
+import { useState, useEffect } from 'react';
+import { useAuth } from './context/AuthContext';
+import { AppProvider, useApp } from './context/AppContext';
 import {
   LayoutDashboard, Target, TrendingUp, Globe, Shield,
   Home, DollarSign, Eye, Calculator, BarChart3,
-  BellRing, ArrowLeftRight, RotateCcw, Menu, X, Sprout,
-  Wifi, WifiOff, Loader2,
+  BellRing, ArrowLeftRight, Menu, X, Sprout,
+  Wifi, WifiOff, Loader2, LogOut, User,
 } from 'lucide-react';
 
 // Tabs
@@ -20,6 +21,11 @@ import SimulatorTab from './components/tabs/SimulatorTab';
 import PerformanceTab from './components/tabs/PerformanceTab';
 import AccumulationTab from './components/tabs/AccumulationTab';
 import TransactionsTab from './components/tabs/TransactionsTab';
+
+// Auth
+import LoginPage from './components/LoginPage';
+import ReLoginModal from './components/ReLoginModal';
+import AdminLayout from './components/AdminLayout';
 
 const TABS = [
   { id: 'dashboard', label: 'Visao Geral', icon: LayoutDashboard },
@@ -106,7 +112,38 @@ function MarketStatusBadge() {
 }
 
 function App() {
-  const { currency, setCurrency, watchlistAlerts, resetData } = useApp();
+  const { loading, isAuthenticated, isAdmin, user, logout } = useAuth();
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0b0f1a]">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+      </div>
+    );
+  }
+
+  // Not authenticated -> Login page
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  // Admin -> Admin layout
+  if (isAdmin) {
+    return <AdminLayout />;
+  }
+
+  // User -> Dashboard (wrapped in AppProvider so portfolio hooks only run when authenticated)
+  return (
+    <AppProvider>
+      <UserDashboard />
+    </AppProvider>
+  );
+}
+
+function UserDashboard() {
+  const { currency, setCurrency, watchlistAlerts } = useApp();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -115,6 +152,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#0b0f1a] text-slate-200">
+      {/* ReLogin Modal */}
+      <ReLoginModal />
+
       {/* ============ HEADER ============ */}
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0b0f1a]/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-3">
@@ -172,13 +212,18 @@ function App() {
               </button>
             </div>
 
-            {/* Reset data */}
+            {/* User info + logout */}
+            <div className="hidden items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-400 sm:flex">
+              <User className="h-3.5 w-3.5" />
+              {user?.name || user?.email}
+            </div>
+
             <button
-              onClick={resetData}
+              onClick={logout}
               className="rounded-lg p-2 text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
-              title="Resetar dados para padrão"
+              title="Sair"
             >
-              <RotateCcw className="h-4 w-4" />
+              <LogOut className="h-4 w-4" />
             </button>
 
             {/* Mobile menu toggle */}

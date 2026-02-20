@@ -3,12 +3,13 @@ import datetime
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, delete, func, text
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from ..database import get_db
+from ..models.user import User
 from ..models.transaction import Transaction
 from ..models.dividend import Dividend
 from ..models.br_stock import BrStock
@@ -22,6 +23,7 @@ from ..models.patrimonial_history import PatrimonialHistory
 from ..models.watchlist import WatchlistItem
 from ..models.allocation_target import AllocationTarget
 from ..models.accumulation_goal import AccumulationGoal
+from ..core.security import get_current_user
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -40,10 +42,12 @@ TX_HEADERS = [
 
 
 @router.get("/export")
-async def export_transactions(db: AsyncSession = Depends(get_db)):
+async def export_transactions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Export all transactions as an XLSX file."""
     result = await db.execute(
-        select(Transaction).order_by(Transaction.date.asc(), Transaction.id.asc())
+        select(Transaction)
+        .where(Transaction.user_id == user.id)
+        .order_by(Transaction.date.asc(), Transaction.id.asc())
     )
     txs = result.scalars().all()
 
@@ -97,37 +101,27 @@ async def export_transactions(db: AsyncSession = Depends(get_db)):
     )
 
 
-# All tables to clear during a full portfolio reset
-ALL_TABLES = [
+# All tables to clear during a full portfolio reset (user-scoped)
+ALL_MODELS = [
     Transaction, Dividend, PatrimonialHistory,
     WatchlistItem, AllocationTarget, AccumulationGoal,
     BrStock, Fii, IntlStock, FixedIncome, FiEtf, CashAccount, RealAsset,
 ]
 
-# Sequences to reset (auto-increment PKs)
-SEQUENCES = [
-    "transactions_id_seq",
-    "dividends_id_seq",
-    "allocation_targets_id_seq",
-    "patrimonial_history_id_seq",
-]
-
 
 @router.post("/reset")
-async def reset_portfolio(db: AsyncSession = Depends(get_db)):
-    """Delete ALL portfolio data: transactions, assets, dividends, history, goals, watchlist."""
+async def reset_portfolio(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Delete ALL portfolio data for the current user."""
     counts = {}
     total = 0
 
-    for model in ALL_TABLES:
-        c = await db.scalar(select(func.count()).select_from(model))
-        await db.execute(delete(model))
+    for model in ALL_MODELS:
+        c = await db.scalar(
+            select(func.count()).select_from(model).where(model.user_id == user.id)
+        )
+        await db.execute(delete(model).where(model.user_id == user.id))
         counts[model.__tablename__] = c
         total += c
-
-    # Reset auto-increment sequences
-    for seq in SEQUENCES:
-        await db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
 
     await db.commit()
 

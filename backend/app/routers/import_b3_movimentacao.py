@@ -10,6 +10,8 @@ from io import BytesIO
 from pydantic import BaseModel
 
 from ..database import get_db
+from ..core.security import get_current_user
+from ..models.user import User
 from ..models.transaction import Transaction
 from ..models.dividend import Dividend
 from ..models.fixed_income import FixedIncome
@@ -272,6 +274,7 @@ def _categorize_row(direction: str, movement_type: str, product: str) -> tuple[s
 async def preview_b3_mov(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Arquivo deve ser .xlsx")
@@ -379,7 +382,7 @@ async def preview_b3_mov(
     # --- Duplicate detection ---
 
     # Load existing dividends for provento duplicate check
-    div_result = await db.execute(select(Dividend))
+    div_result = await db.execute(select(Dividend).where(Dividend.user_id == user.id))
     existing_divs = div_result.scalars().all()
     div_keys = set()
     for d in existing_divs:
@@ -391,7 +394,7 @@ async def preview_b3_mov(
         ))
 
     # Load existing transactions for tx duplicate check
-    tx_result = await db.execute(select(Transaction))
+    tx_result = await db.execute(select(Transaction).where(Transaction.user_id == user.id))
     existing_txs = tx_result.scalars().all()
     tx_keys = set()
     for tx in existing_txs:
@@ -404,13 +407,13 @@ async def preview_b3_mov(
         ))
 
     # Check which assets exist
-    br_result = await db.execute(select(BrStock.ticker))
+    br_result = await db.execute(select(BrStock.ticker).where(BrStock.user_id == user.id))
     br_tickers = {r[0] for r in br_result.all()}
-    fii_result = await db.execute(select(Fii.ticker))
+    fii_result = await db.execute(select(Fii.ticker).where(Fii.user_id == user.id))
     fii_tickers = {r[0] for r in fii_result.all()}
-    etf_result = await db.execute(select(FiEtf.ticker))
+    etf_result = await db.execute(select(FiEtf.ticker).where(FiEtf.user_id == user.id))
     etf_tickers = {r[0] for r in etf_result.all()}
-    fi_result = await db.execute(select(FixedIncome.id))
+    fi_result = await db.execute(select(FixedIncome.id).where(FixedIncome.user_id == user.id))
     fi_ids = {r[0] for r in fi_result.all()}
 
     new_assets = set()
@@ -481,6 +484,7 @@ async def preview_b3_mov(
 async def confirm_b3_mov(
     body: MovConfirmRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     sorted_rows = sorted(body.rows, key=lambda r: r.date)
 
@@ -490,13 +494,13 @@ async def confirm_b3_mov(
     errors = []
 
     # Pre-load existing assets
-    br_result = await db.execute(select(BrStock.ticker))
+    br_result = await db.execute(select(BrStock.ticker).where(BrStock.user_id == user.id))
     br_tickers = {r[0] for r in br_result.all()}
-    fii_result = await db.execute(select(Fii.ticker))
+    fii_result = await db.execute(select(Fii.ticker).where(Fii.user_id == user.id))
     fii_tickers = {r[0] for r in fii_result.all()}
-    etf_result = await db.execute(select(FiEtf.ticker))
+    etf_result = await db.execute(select(FiEtf.ticker).where(FiEtf.user_id == user.id))
     etf_tickers = {r[0] for r in etf_result.all()}
-    fi_result = await db.execute(select(FixedIncome.id))
+    fi_result = await db.execute(select(FixedIncome.id).where(FixedIncome.user_id == user.id))
     fi_ids = {r[0] for r in fi_result.all()}
 
     asset_sets = {"br_stock": br_tickers, "fii": fii_tickers, "fi_etf": etf_tickers}
@@ -527,6 +531,7 @@ async def confirm_b3_mov(
                     ticker=(row.ticker or row.rf_code or row.asset_name)[:10],
                     type=row.import_as,
                     value=row.total_value or 0,
+                    user_id=user.id,
                 )
                 db.add(div)
                 dividends_created += 1
@@ -548,6 +553,7 @@ async def confirm_b3_mov(
                         indexer="CDI",
                         contracted_rate=0,
                         tax_exempt=False,
+                        user_id=user.id,
                     )
                     db.add(fi)
                     fi_ids.add(row.rf_code)
@@ -568,10 +574,11 @@ async def confirm_b3_mov(
                     broker=row.institution[:30],
                     fees=0,
                     notes=f"Importado B3 Mov - {row.movement_type}",
+                    user_id=user.id,
                 )
                 db.add(tx)
                 await db.flush()
-                await _apply(db, tx)
+                await _apply(db, tx, user.id)
                 transactions_created += 1
 
             # --- Renda Fixa vencimento / resgate ---
@@ -590,6 +597,7 @@ async def confirm_b3_mov(
                     broker=row.institution[:30],
                     fees=0,
                     notes=f"Importado B3 Mov - {row.movement_type}",
+                    user_id=user.id,
                 )
                 db.add(tx)
                 await db.flush()
@@ -608,7 +616,7 @@ async def confirm_b3_mov(
                     asset.maturity_date = date
                     # Don't call _apply (total=0 wouldn't change anything)
                 else:
-                    await _apply(db, tx)
+                    await _apply(db, tx, user.id)
 
                 transactions_created += 1
 
@@ -620,6 +628,7 @@ async def confirm_b3_mov(
                     ticker=(row.rf_code or row.asset_name)[:10],
                     type=div_type,
                     value=row.total_value or 0,
+                    user_id=user.id,
                 )
                 db.add(div)
                 dividends_created += 1
@@ -639,18 +648,21 @@ async def confirm_b3_mov(
                                 ticker=row.ticker, name=name,
                                 sector=sector, qty=0, avg_price=0,
                                 current_price=0, broker=row.institution[:30],
+                                user_id=user.id,
                             ))
                         elif row.asset_class == "fii":
                             db.add(Fii(
                                 ticker=row.ticker, name=name,
                                 sector=sector, qty=0, avg_price=0,
                                 current_price=0, broker=row.institution[:30],
+                                user_id=user.id,
                             ))
                         elif row.asset_class == "fi_etf":
                             db.add(FiEtf(
                                 ticker=row.ticker, name=info.get("name") or row.asset_name or row.ticker,
                                 qty=0, avg_price=0, current_price=0,
                                 broker=row.institution[:30],
+                                user_id=user.id,
                             ))
                         ticker_set.add(row.ticker)
                         assets_created.append(row.ticker)
@@ -669,10 +681,11 @@ async def confirm_b3_mov(
                         broker=row.institution[:30],
                         fees=0,
                         notes=f"Importado B3 Mov - {row.movement_type}",
+                        user_id=user.id,
                     )
                     db.add(tx)
                     await db.flush()
-                    await _apply(db, tx)
+                    await _apply(db, tx, user.id)
                     transactions_created += 1
 
             # --- Venda (Tesouro or stocks) ---
@@ -693,6 +706,7 @@ async def confirm_b3_mov(
                         broker=row.institution[:30],
                         fees=0,
                         notes=f"Importado B3 Mov - Venda",
+                        user_id=user.id,
                     )
                     db.add(tx)
                     await db.flush()
@@ -703,7 +717,7 @@ async def confirm_b3_mov(
                         asset.current_value = tv
                         asset.maturity_date = date
                     else:
-                        await _apply(db, tx)
+                        await _apply(db, tx, user.id)
 
                     transactions_created += 1
                 elif row.ticker and row.asset_class:
@@ -719,18 +733,21 @@ async def confirm_b3_mov(
                                 ticker=row.ticker, name=name,
                                 sector=sector, qty=0, avg_price=0,
                                 current_price=0, broker=row.institution[:30],
+                                user_id=user.id,
                             ))
                         elif row.asset_class == "fii":
                             db.add(Fii(
                                 ticker=row.ticker, name=name,
                                 sector=sector, qty=0, avg_price=0,
                                 current_price=0, broker=row.institution[:30],
+                                user_id=user.id,
                             ))
                         elif row.asset_class == "fi_etf":
                             db.add(FiEtf(
                                 ticker=row.ticker, name=info.get("name") or row.asset_name or row.ticker,
                                 qty=0, avg_price=0, current_price=0,
                                 broker=row.institution[:30],
+                                user_id=user.id,
                             ))
                         ticker_set.add(row.ticker)
                         assets_created.append(row.ticker)
@@ -749,10 +766,11 @@ async def confirm_b3_mov(
                         broker=row.institution[:30],
                         fees=0,
                         notes=f"Importado B3 Mov - Venda",
+                        user_id=user.id,
                     )
                     db.add(tx)
                     await db.flush()
-                    await _apply(db, tx)
+                    await _apply(db, tx, user.id)
                     transactions_created += 1
 
         except Exception as e:

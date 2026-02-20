@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
+from ..models.user import User
 from ..models.transaction import Transaction
 from ..models.br_stock import BrStock
 from ..models.fii import Fii
@@ -12,6 +13,7 @@ from ..models.real_asset import RealAsset
 from ..models.fi_etf import FiEtf
 from ..models.cash_account import CashAccount
 from ..schemas.transaction import TransactionCreate, TransactionRead, TransactionUpdate
+from ..core.security import get_current_user
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -41,27 +43,34 @@ VALID_OPS = {
 }
 
 
-async def _get_asset(db: AsyncSession, tx: Transaction | TransactionCreate):
+async def _get_asset(db: AsyncSession, tx, user_id: str = None):
     entry = MODEL_MAP.get(tx.asset_class)
     if not entry:
         return None
     model, key_field = entry
     if key_field == "ticker":
         pk = tx.ticker
+        if not pk:
+            return None
+        # Composite PK: (user_id, ticker)
+        uid = user_id or getattr(tx, "user_id", None)
+        if uid:
+            return await db.get(model, (uid, pk.upper()))
+        return await db.get(model, pk.upper())
     else:
         pk = tx.asset_id
-    if not pk:
-        return None
-    return await db.get(model, pk.upper() if key_field == "ticker" else pk)
+        if not pk:
+            return None
+        return await db.get(model, pk)
 
 
 # ---------------------------------------------------------------------------
 # Apply / revert position changes
 # ---------------------------------------------------------------------------
 
-async def _apply(db: AsyncSession, tx):
+async def _apply(db: AsyncSession, tx, user_id: str = None):
     """Apply a transaction's effect on the underlying asset position."""
-    asset = await _get_asset(db, tx)
+    asset = await _get_asset(db, tx, user_id)
     if not asset:
         return
 
@@ -148,9 +157,9 @@ async def _apply(db: AsyncSession, tx):
                 asset.institution = tx.broker_destination
 
 
-async def _revert(db: AsyncSession, tx):
+async def _revert(db: AsyncSession, tx, user_id: str = None):
     """Revert a transaction's effect (inverse of _apply)."""
-    asset = await _get_asset(db, tx)
+    asset = await _get_asset(db, tx, user_id)
     if not asset:
         return
 
@@ -246,28 +255,32 @@ async def _revert(db: AsyncSession, tx):
 # ---------------------------------------------------------------------------
 
 @router.get("", response_model=list[TransactionRead])
-async def list_transactions(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).order_by(Transaction.date.desc(), Transaction.id.desc()))
+async def list_transactions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.user_id == user.id)
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+    )
     return result.scalars().all()
 
 
 @router.post("", response_model=TransactionRead, status_code=201)
-async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends(get_db)):
+async def create_transaction(data: TransactionCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     valid = VALID_OPS.get(data.asset_class)
     if valid and data.operation_type not in valid:
         raise HTTPException(422, f"Invalid operation '{data.operation_type}' for {data.asset_class}")
-    obj = Transaction(**data.model_dump())
+    obj = Transaction(**data.model_dump(), user_id=user.id)
     db.add(obj)
-    await _apply(db, obj)
+    await _apply(db, obj, user.id)
     await db.commit()
     await db.refresh(obj)
     return obj
 
 
 @router.get("/{transaction_id}", response_model=TransactionRead)
-async def get_transaction(transaction_id: int, db: AsyncSession = Depends(get_db)):
+async def get_transaction(transaction_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     obj = await db.get(Transaction, transaction_id)
-    if not obj:
+    if not obj or obj.user_id != user.id:
         raise HTTPException(404, f"Transaction {transaction_id} not found")
     return obj
 
@@ -276,13 +289,14 @@ async def get_transaction(transaction_id: int, db: AsyncSession = Depends(get_db
 async def update_transaction(
     transaction_id: int,
     data: TransactionUpdate,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     obj = await db.get(Transaction, transaction_id)
-    if not obj:
+    if not obj or obj.user_id != user.id:
         raise HTTPException(404, f"Transaction {transaction_id} not found")
     # Revert the old state
-    await _revert(db, obj)
+    await _revert(db, obj, user.id)
     # Apply updates
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -292,17 +306,17 @@ async def update_transaction(
     if valid and obj.operation_type not in valid:
         raise HTTPException(422, f"Invalid operation '{obj.operation_type}' for {obj.asset_class}")
     # Apply new state
-    await _apply(db, obj)
+    await _apply(db, obj, user.id)
     await db.commit()
     await db.refresh(obj)
     return obj
 
 
 @router.delete("/{transaction_id}", status_code=204)
-async def delete_transaction(transaction_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_transaction(transaction_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     obj = await db.get(Transaction, transaction_id)
-    if not obj:
+    if not obj or obj.user_id != user.id:
         raise HTTPException(404, f"Transaction {transaction_id} not found")
-    await _revert(db, obj)
+    await _revert(db, obj, user.id)
     await db.delete(obj)
     await db.commit()
