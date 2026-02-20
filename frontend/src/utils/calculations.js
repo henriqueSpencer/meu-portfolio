@@ -63,10 +63,9 @@ export function calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exc
   const rfBonds = fixedIncome.reduce((sum, f) => sum + f.currentValue, 0);
   const rfEtfs = fiEtfs.reduce((sum, e) => sum + e.qty * e.currentPrice, 0);
   const rfTotal = rfBonds + rfEtfs;
-  const cripto = 0; // Placeholder
   const caixa = cashAccounts.reduce((sum, a) => sum + (a.balance || 0), 0);
 
-  const total = rvBrasil + fiisTotal + rvExterior + rfTotal + cripto + caixa;
+  const total = rvBrasil + fiisTotal + rvExterior + rfTotal + caixa;
 
   return {
     total,
@@ -75,7 +74,6 @@ export function calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exc
       { class: 'FIIs', value: fiisTotal, pct: total ? (fiisTotal / total * 100) : 0 },
       { class: 'RV Exterior', value: rvExterior, pct: total ? (rvExterior / total * 100) : 0 },
       { class: 'Renda Fixa', value: rfTotal, pct: total ? (rfTotal / total * 100) : 0 },
-      { class: 'Cripto', value: cripto, pct: total ? (cripto / total * 100) : 0 },
       { class: 'Caixa', value: caixa, pct: total ? (caixa / total * 100) : 0 },
     ],
   };
@@ -84,19 +82,35 @@ export function calculateAllocation(brStocks, fiis, intlStocks, fixedIncome, exc
 /**
  * Sugere alocação de aporte mensal baseado nas maiores diferenças em relação às metas
  */
-export function suggestAllocation(amount, currentAllocation, targets) {
+export function suggestAllocation(amount, currentAllocation, targets, totalPortfolio = 0) {
   const diffs = targets.map(t => {
-    const current = currentAllocation.find(c => c.class === t.class);
+    const current = currentAllocation.find(c => c.class === t.assetClass);
+    const currentValue = current ? current.value : 0;
     const currentPct = current ? current.pct : 0;
-    return {
-      class: t.class,
-      target: t.target,
-      current: currentPct,
-      diff: t.target - currentPct, // Positivo = precisa aportar mais
-    };
-  }).sort((a, b) => b.diff - a.diff); // Maior déficit primeiro
 
-  // Pega as 2 classes com maior déficit
+    if (t.targetType === 'value') {
+      // For R$ targets: deficit is target - current value
+      const deficit = t.target - currentValue;
+      return {
+        class: t.assetClass,
+        target: totalPortfolio > 0 ? (t.target / totalPortfolio) * 100 : 0,
+        current: currentPct,
+        diff: deficit > 0 ? (totalPortfolio > 0 ? (deficit / totalPortfolio) * 100 : 0) : 0,
+        targetType: 'value',
+      };
+    } else {
+      // For % targets: use available (total - fixed) to compute target value
+      const targetPct = t.target;
+      return {
+        class: t.assetClass,
+        target: targetPct,
+        current: currentPct,
+        diff: targetPct - currentPct,
+        targetType: 'percentage',
+      };
+    }
+  }).sort((a, b) => b.diff - a.diff);
+
   const top2 = diffs.filter(d => d.diff > 0).slice(0, 2);
   if (top2.length === 0) return [];
 

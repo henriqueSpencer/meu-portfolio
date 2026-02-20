@@ -29,11 +29,11 @@ import {
   PieChart as PieChartIcon,
 } from 'lucide-react';
 import { CHART_COLORS, SECTOR_COLORS, PERENNIAL_SECTORS } from '../../data/mockData';
-import FormModal, { FormField, FormInput } from '../FormModal';
+import FormModal, { FormField, FormInput, FormSelect } from '../FormModal';
 
 const GLASS = 'rounded-xl border border-white/10 bg-white/5 backdrop-blur-md';
 
-const EMPTY_GOAL = { ticker: '', targetQty: '', note: '' };
+const EMPTY_GOAL = { ticker: '', targetQty: '', targetType: 'qty', targetValue: '', note: '' };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,6 +129,10 @@ export default function AccumulationTab() {
   const {
     brStocks,
     fiis,
+    intlStocks,
+    fiEtfs,
+    fixedIncome,
+    cashAccounts,
     dividends,
     dividendsSummary,
     accumulationGoals,
@@ -180,8 +184,73 @@ export default function AccumulationTab() {
         dividends5y: null,
       };
     }
+    for (const s of intlStocks) {
+      const medianDiv = median(s.dividends5y);
+      map[s.ticker] = {
+        ticker: s.ticker,
+        name: s.name,
+        type: 'Acao Intl',
+        sector: s.sector,
+        qty: s.qty,
+        avgPrice: (s.avgPriceUsd || 0) * exchangeRate,
+        currentPrice: (s.currentPriceUsd || 0) * exchangeRate,
+        lpa: s.lpa,
+        vpa: s.vpa,
+        annualDiv: medianDiv * exchangeRate,
+        dyCurrentPct: s.currentPriceUsd > 0 ? (medianDiv / s.currentPriceUsd) * 100 : 0,
+        dividends5y: s.dividends5y,
+      };
+    }
+    for (const e of fiEtfs) {
+      map[e.ticker] = {
+        ticker: e.ticker,
+        name: e.name,
+        type: 'ETF RF',
+        sector: 'Renda Fixa',
+        qty: e.qty,
+        avgPrice: e.avgPrice,
+        currentPrice: e.currentPrice,
+        lpa: null,
+        vpa: null,
+        annualDiv: 0,
+        dyCurrentPct: 0,
+        dividends5y: null,
+      };
+    }
+    for (const f of fixedIncome) {
+      map[f.title || f.id] = {
+        ticker: f.title || f.id,
+        name: f.title,
+        type: 'Renda Fixa',
+        sector: 'Renda Fixa',
+        qty: 1,
+        avgPrice: f.appliedValue || 0,
+        currentPrice: f.currentValue || 0,
+        lpa: null,
+        vpa: null,
+        annualDiv: 0,
+        dyCurrentPct: 0,
+        dividends5y: null,
+      };
+    }
+    for (const c of cashAccounts) {
+      map[c.name || c.id] = {
+        ticker: c.name || c.id,
+        name: c.name,
+        type: 'Caixa',
+        sector: 'Caixa',
+        qty: 1,
+        avgPrice: c.balance || 0,
+        currentPrice: c.balance || 0,
+        lpa: null,
+        vpa: null,
+        annualDiv: 0,
+        dyCurrentPct: 0,
+        dividends5y: null,
+      };
+    }
     return map;
-  }, [brStocks, fiis]);
+  }, [brStocks, fiis, intlStocks, fiEtfs, fixedIncome, cashAccounts, exchangeRate]);
 
   // ---- 1. Summary cards data ----------------------------------------------
   const totalShares = useMemo(
@@ -212,14 +281,12 @@ export default function AccumulationTab() {
   const motivationalCards = useMemo(() => {
     const cards = [];
 
-    // Card 1: total shares
     cards.push({
       text: `Voce acumulou ${totalShares.toLocaleString('pt-BR')} cotas no total!`,
       color: 'text-emerald-400',
       bg: 'bg-emerald-500/10',
     });
 
-    // Card 2: best monthly payer
     let bestTicker = '';
     let bestMonthly = 0;
     for (const a of Object.values(allAssets)) {
@@ -237,27 +304,34 @@ export default function AccumulationTab() {
       });
     }
 
-    // Card 3: closest goal gap
     let closestGoal = null;
     let smallestGap = Infinity;
     for (const g of accumulationGoals) {
       const asset = allAssets[g.ticker];
-      const currentQty = asset ? asset.qty : 0;
-      const remaining = g.targetQty - currentQty;
-      if (remaining > 0 && remaining < smallestGap) {
-        smallestGap = remaining;
-        closestGoal = { ticker: g.ticker, remaining };
+      if (g.targetType === 'value') {
+        const currentValue = asset ? asset.qty * asset.currentPrice : 0;
+        const remaining = g.targetValue - currentValue;
+        if (remaining > 0 && remaining < smallestGap) {
+          smallestGap = remaining;
+          closestGoal = { ticker: g.ticker, text: `${formatBRL(remaining)} em ${g.ticker}` };
+        }
+      } else {
+        const currentQty = asset ? asset.qty : 0;
+        const remaining = g.targetQty - currentQty;
+        if (remaining > 0 && remaining < smallestGap) {
+          smallestGap = remaining;
+          closestGoal = { ticker: g.ticker, text: `${remaining} cotas de ${g.ticker}` };
+        }
       }
     }
     if (closestGoal) {
       cards.push({
-        text: `Faltam ${closestGoal.remaining} cotas de ${closestGoal.ticker} para sua meta`,
+        text: `Faltam ${closestGoal.text} para sua meta`,
         color: 'text-amber-400',
         bg: 'bg-amber-500/10',
       });
     }
 
-    // Card 4: projected annual income
     const annualIncome = projectedMonthlyIncome * 12;
     cards.push({
       text: `Sua renda passiva projetada e ${formatBRL(annualIncome)}/ano`,
@@ -272,6 +346,7 @@ export default function AccumulationTab() {
   const { sectorData, perennialPct } = useMemo(() => {
     const sectorMap = {};
     for (const a of Object.values(allAssets)) {
+      if (a.type === 'Caixa' || a.type === 'Renda Fixa') continue;
       const val = a.qty * a.currentPrice;
       sectorMap[a.sector] = (sectorMap[a.sector] || 0) + val;
     }
@@ -299,6 +374,30 @@ export default function AccumulationTab() {
       const currentQty = asset ? asset.qty : 0;
       const currentPrice = asset ? asset.currentPrice : 0;
       const annualDiv = asset ? asset.annualDiv : 0;
+      const isValueGoal = g.targetType === 'value';
+
+      if (isValueGoal) {
+        const currentValue = currentQty * currentPrice;
+        const tv = g.targetValue || 0;
+        const progressPct = tv > 0 ? Math.min((currentValue / tv) * 100, 100) : 0;
+        const remaining = Math.max(0, tv - currentValue);
+        const projectedMonthlyAtGoal = annualDiv > 0 && currentPrice > 0
+          ? ((tv / currentPrice) * annualDiv) / 12
+          : 0;
+        return {
+          ...g,
+          currentQty,
+          currentPrice,
+          currentValue,
+          remaining,
+          progressPct,
+          costToComplete: remaining,
+          projectedMonthlyAtGoal,
+          isValueGoal: true,
+        };
+      }
+
+      // qty goal (default)
       const remaining = Math.max(0, g.targetQty - currentQty);
       const progressPct = g.targetQty > 0 ? Math.min((currentQty / g.targetQty) * 100, 100) : 0;
       const costToComplete = remaining * currentPrice;
@@ -312,19 +411,20 @@ export default function AccumulationTab() {
         progressPct,
         costToComplete,
         projectedMonthlyAtGoal,
+        isValueGoal: false,
       };
     });
   }, [accumulationGoals, allAssets]);
 
   // ---- 5. Fundamentals table data -----------------------------------------
   const fundamentalsData = useMemo(() => {
-    // Sum dividends received per ticker
     const divReceivedMap = {};
     for (const d of dividends) {
       divReceivedMap[d.ticker] = (divReceivedMap[d.ticker] || 0) + d.value;
     }
 
     return Object.values(allAssets)
+      .filter(a => a.type === 'Acao' || a.type === 'FII')
       .map((a) => {
         const yoc = yieldOnCost(a.annualDiv, a.avgPrice);
         const pl = a.lpa && a.lpa > 0 ? a.currentPrice / a.lpa : null;
@@ -355,19 +455,26 @@ export default function AccumulationTab() {
     setGoalForm({
       ticker: goal.ticker,
       targetQty: String(goal.targetQty),
+      targetType: goal.targetType || 'qty',
+      targetValue: String(goal.targetValue || ''),
       note: goal.note,
     });
     setGoalModalOpen(true);
   }
 
   function handleSaveGoal() {
+    const isValueGoal = goalForm.targetType === 'value';
     const parsed = {
       id: editingGoal ? editingGoal.id : `goal-${Date.now()}`,
       ticker: goalForm.ticker.trim().toUpperCase(),
-      targetQty: Number(goalForm.targetQty) || 0,
+      targetQty: isValueGoal ? 0 : (Number(goalForm.targetQty) || 0),
+      targetType: goalForm.targetType,
+      targetValue: isValueGoal ? (Number(goalForm.targetValue) || 0) : 0,
       note: goalForm.note.trim(),
     };
-    if (!parsed.ticker || parsed.targetQty <= 0) return;
+    if (!parsed.ticker) return;
+    if (isValueGoal && parsed.targetValue <= 0) return;
+    if (!isValueGoal && parsed.targetQty <= 0) return;
 
     if (editingGoal) {
       setAccumulationGoals((prev) =>
@@ -625,6 +732,13 @@ export default function AccumulationTab() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className="text-base font-semibold text-white">{g.ticker}</span>
+                    <span className={`text-[10px] font-medium rounded-full px-1.5 py-0.5 ${
+                      g.isValueGoal
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-indigo-500/15 text-indigo-400'
+                    }`}>
+                      {g.isValueGoal ? 'R$' : 'Cotas'}
+                    </span>
                     <span className="text-xs text-slate-500">{g.note}</span>
                   </div>
                   <Edit3 size={14} className="text-slate-500" />
@@ -633,7 +747,11 @@ export default function AccumulationTab() {
                 {/* Progress bar */}
                 <div className="mb-2">
                   <div className="flex justify-between text-xs text-slate-400 mb-1">
-                    <span>{g.currentQty} / {g.targetQty} cotas</span>
+                    <span>
+                      {g.isValueGoal
+                        ? `${formatBRL(g.currentValue || 0)} / ${formatBRL(g.targetValue)}`
+                        : `${g.currentQty} / ${g.targetQty} cotas`}
+                    </span>
                     <span className={g.progressPct >= 100 ? 'text-emerald-400' : 'text-slate-300'}>
                       {g.progressPct.toFixed(0)}%
                     </span>
@@ -655,18 +773,24 @@ export default function AccumulationTab() {
                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
                   <div>
                     <span className="block text-slate-500">Faltam</span>
-                    <span className="text-slate-200">{g.remaining} cotas</span>
+                    <span className="text-slate-200">
+                      {g.isValueGoal
+                        ? formatBRL(g.remaining)
+                        : `${g.remaining} cotas`}
+                    </span>
                   </div>
                   <div>
                     <span className="block text-slate-500">Custo p/ completar</span>
                     <span className="text-slate-200">{formatCurrency(g.costToComplete, currency, exchangeRate)}</span>
                   </div>
-                  <div className="col-span-2">
-                    <span className="block text-slate-500">Renda mensal ao atingir</span>
-                    <span className="text-emerald-400 font-medium">
-                      {formatCurrency(g.projectedMonthlyAtGoal, currency, exchangeRate)}
-                    </span>
-                  </div>
+                  {g.projectedMonthlyAtGoal > 0 && (
+                    <div className="col-span-2">
+                      <span className="block text-slate-500">Renda mensal ao atingir</span>
+                      <span className="text-emerald-400 font-medium">
+                        {formatCurrency(g.projectedMonthlyAtGoal, currency, exchangeRate)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -773,22 +897,44 @@ export default function AccumulationTab() {
         onSave={handleSaveGoal}
         onDelete={editingGoal ? handleDeleteGoal : undefined}
       >
-        <FormField label="Ticker">
+        <FormField label="Ticker / Ativo">
           <FormInput
             value={goalForm.ticker}
             onChange={(e) => setGoalForm({ ...goalForm, ticker: e.target.value })}
-            placeholder="Ex: ITUB4"
+            placeholder="Ex: ITUB4, AAPL, IMAB11"
           />
         </FormField>
-        <FormField label="Meta de Cotas">
-          <FormInput
-            type="number"
-            value={goalForm.targetQty}
-            onChange={(e) => setGoalForm({ ...goalForm, targetQty: e.target.value })}
-            placeholder="Ex: 500"
-            min="1"
-          />
+        <FormField label="Tipo de Meta">
+          <FormSelect
+            value={goalForm.targetType}
+            onChange={(e) => setGoalForm({ ...goalForm, targetType: e.target.value })}
+          >
+            <option value="qty">Quantidade de Cotas</option>
+            <option value="value">Valor Investido (R$)</option>
+          </FormSelect>
         </FormField>
+        {goalForm.targetType === 'qty' ? (
+          <FormField label="Meta de Cotas">
+            <FormInput
+              type="number"
+              value={goalForm.targetQty}
+              onChange={(e) => setGoalForm({ ...goalForm, targetQty: e.target.value })}
+              placeholder="Ex: 500"
+              min="1"
+            />
+          </FormField>
+        ) : (
+          <FormField label="Meta em R$">
+            <FormInput
+              type="number"
+              value={goalForm.targetValue}
+              onChange={(e) => setGoalForm({ ...goalForm, targetValue: e.target.value })}
+              placeholder="Ex: 50000"
+              min="1"
+              step="100"
+            />
+          </FormField>
+        )}
         <FormField label="Observacao">
           <FormInput
             value={goalForm.note}

@@ -381,7 +381,12 @@ export function AppProvider({ children }) {
       if (old && JSON.stringify(old) !== JSON.stringify(item)) {
         targetsCrud.update.mutate({
           id: item.id,
-          data: { asset_class: item.asset_class ?? item.class, target: item.target, icon: item.icon || '' },
+          data: {
+            asset_class: item.assetClass,
+            target: item.target,
+            target_type: item.targetType || 'percentage',
+            icon: item.icon || '',
+          },
         });
       }
     }

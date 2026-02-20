@@ -82,11 +82,20 @@ export function toSnakeCase(obj, type) {
         status: obj.status || 'Interesse',
         sector: obj.sector || '',
       };
+    case 'allocationTarget':
+      return {
+        asset_class: obj.assetClass ?? obj.asset_class,
+        target: obj.target ?? 0,
+        target_type: obj.targetType ?? obj.target_type ?? 'percentage',
+        icon: obj.icon || '',
+      };
     case 'accGoal':
       return {
         id: obj.id,
         ticker: obj.ticker,
         target_qty: obj.targetQty ?? obj.target_qty ?? 0,
+        target_type: obj.targetType ?? obj.target_type ?? 'qty',
+        target_value: obj.targetValue ?? obj.target_value ?? 0,
         note: obj.note || '',
       };
     case 'transaction':

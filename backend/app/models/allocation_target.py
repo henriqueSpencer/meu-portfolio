@@ -10,4 +10,5 @@ class AllocationTarget(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     asset_class: Mapped[str] = mapped_column(String(40), unique=True)
     target: Mapped[float] = mapped_column(Float, default=0)
+    target_type: Mapped[str] = mapped_column(String(10), default="percentage")
     icon: Mapped[str] = mapped_column(String(30), default="")
