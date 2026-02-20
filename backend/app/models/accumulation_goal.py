@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, ForeignKey
+from sqlalchemy import String, Integer, Float, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -11,4 +11,6 @@ class AccumulationGoal(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     ticker: Mapped[str] = mapped_column(String(10))
     target_qty: Mapped[int] = mapped_column(Integer, default=0)
+    target_type: Mapped[str] = mapped_column(String(10), default="qty")
+    target_value: Mapped[float] = mapped_column(Float, default=0)
     note: Mapped[str] = mapped_column(String(200), default="")

@@ -97,12 +97,11 @@ WATCHLIST = [
 ]
 
 ALLOCATION_TARGETS = [
-    {"asset_class": "RV Brasil", "target": 30, "icon": "TrendingUp"},
-    {"asset_class": "FIIs", "target": 15, "icon": "Building2"},
-    {"asset_class": "RV Exterior", "target": 20, "icon": "Globe"},
-    {"asset_class": "Renda Fixa", "target": 25, "icon": "Shield"},
-    {"asset_class": "Cripto", "target": 5, "icon": "Bitcoin"},
-    {"asset_class": "Caixa", "target": 5, "icon": "Wallet"},
+    {"asset_class": "RV Brasil", "target": 30, "target_type": "percentage", "icon": "TrendingUp"},
+    {"asset_class": "FIIs", "target": 15, "target_type": "percentage", "icon": "Building2"},
+    {"asset_class": "RV Exterior", "target": 20, "target_type": "percentage", "icon": "Globe"},
+    {"asset_class": "Renda Fixa", "target": 25, "target_type": "percentage", "icon": "Shield"},
+    {"asset_class": "Caixa", "target": 10, "target_type": "percentage", "icon": "Wallet"},
 ]
 
 FI_ETFS = [
@@ -117,10 +116,10 @@ CASH_ACCOUNTS = [
 ]
 
 ACCUMULATION_GOALS = [
-    {"id": "goal-1", "ticker": "ITUB4", "target_qty": 500, "note": "Acumular banco perene"},
-    {"id": "goal-2", "ticker": "BBAS3", "target_qty": 400, "note": "Pilar de dividendos bancarios"},
-    {"id": "goal-3", "ticker": "HGLG11", "target_qty": 100, "note": "Renda passiva com logistica"},
-    {"id": "goal-4", "ticker": "PETR4", "target_qty": 300, "note": "Dividendos extraordinarios"},
+    {"id": "goal-1", "ticker": "ITUB4", "target_qty": 500, "target_type": "qty", "target_value": 0, "note": "Acumular banco perene"},
+    {"id": "goal-2", "ticker": "BBAS3", "target_qty": 400, "target_type": "qty", "target_value": 0, "note": "Pilar de dividendos bancarios"},
+    {"id": "goal-3", "ticker": "HGLG11", "target_qty": 100, "target_type": "qty", "target_value": 0, "note": "Renda passiva com logistica"},
+    {"id": "goal-4", "ticker": "PETR4", "target_qty": 300, "target_type": "qty", "target_value": 0, "note": "Dividendos extraordinarios"},
 ]
 
 PATRIMONIAL_HISTORY = [

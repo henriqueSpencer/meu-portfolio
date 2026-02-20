@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { suggestAllocation } from '../../utils/calculations';
-import { formatBRL, formatCurrency, formatPctUnsigned } from '../../utils/formatters';
+import { formatBRL, formatPctUnsigned } from '../../utils/formatters';
 import {
   BarChart,
   Bar,
@@ -13,7 +13,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Calculator, ArrowRight, RefreshCw } from 'lucide-react';
-import { CHART_COLORS } from '../../data/mockData';
 
 // ---------------------------------------------------------------------------
 // Accent colours used in the suggestion cards' left-border
@@ -44,7 +43,7 @@ function ChartTooltip({ active, payload, label }) {
 // Main component
 // ---------------------------------------------------------------------------
 export default function SimulatorTab() {
-  const { allocation, targets, currency, exchangeRate } = useApp();
+  const { allocation, targets } = useApp();
 
   // ---- Local state ----------------------------------------------------------
   const [inputAmount, setInputAmount] = useState(5000);
@@ -62,7 +61,7 @@ export default function SimulatorTab() {
     const amount = Number(inputAmount) || 0;
     if (amount <= 0) return;
 
-    const result = suggestAllocation(amount, allocation.classes, targets);
+    const result = suggestAllocation(amount, allocation.classes, targets, allocation.total);
     setSuggestions(result);
     setSimulatedAmount(amount);
     setHasSimulated(true);

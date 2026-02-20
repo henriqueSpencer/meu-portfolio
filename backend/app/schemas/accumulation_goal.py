@@ -4,6 +4,8 @@ from pydantic import BaseModel
 class AccumulationGoalBase(BaseModel):
     ticker: str
     target_qty: int = 0
+    target_type: str = "qty"
+    target_value: float = 0
     note: str = ""
 
 
