@@ -5,8 +5,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://dash:dash@db:5432/dash_financeiro"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
-    # JWT
-    jwt_secret: str = "change-me-in-production"
+    # JWT (required — no defaults for secrets)
+    jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     # Google OAuth
     google_client_id: str = ""
 
-    # Admin seed
-    admin_email: str = "admin@dash.com"
-    admin_password: str = "admin123"
+    # Admin seed (required — no defaults for credentials)
+    admin_email: str
+    admin_password: str
 
     # SMTP (optional — falls back to console)
     smtp_host: str = ""
