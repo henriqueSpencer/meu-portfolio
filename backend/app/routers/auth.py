@@ -3,8 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from ..core.limiter import limiter
 
 from ..config import settings
 from ..database import get_db
@@ -31,7 +30,6 @@ from ..services.email_service import send_verification_email
 from ..services.google_auth import verify_google_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _user_dict(user: User) -> dict:
@@ -127,7 +125,8 @@ async def login(
 
 
 @router.post("/refresh", response_model=RefreshResponse)
-async def refresh(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def refresh(data: RefreshRequest, request: Request, db: AsyncSession = Depends(get_db)):
     payload = decode_token(data.refresh_token, expected_type="refresh")
     user_id = payload.get("sub")
     if not user_id:
@@ -143,6 +142,7 @@ async def refresh(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/google", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def google_auth(
     data: GoogleAuthRequest,
     request: Request,
@@ -185,6 +185,7 @@ async def google_auth(
                 is_approved=False,  # Still needs admin approval
             )
             db.add(user)
+            await db.flush()
 
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Conta desativada")

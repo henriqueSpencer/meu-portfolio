@@ -1,4 +1,5 @@
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 
 from ..config import settings
@@ -21,7 +22,7 @@ async def send_verification_email(email: str, token: str):
         msg["To"] = email
 
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
+            server.starttls(context=ssl.create_default_context())
             server.login(settings.smtp_user, settings.smtp_password)
             server.sendmail(msg["From"], [email], msg.as_string())
 

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -22,4 +23,4 @@ class UserUpdate(BaseModel):
     name: str | None = None
     is_active: bool | None = None
     is_approved: bool | None = None
-    role: str | None = None
+    role: Literal["user", "admin"] | None = None

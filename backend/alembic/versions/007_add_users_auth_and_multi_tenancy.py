@@ -1,7 +1,7 @@
 """Add users, activity_logs tables and user_id to all models
 
-Revision ID: 006
-Revises: 005
+Revision ID: 007
+Revises: 006
 Create Date: 2026-02-20
 
 NOTE: This migration restructures all tables for multi-tenancy.
@@ -12,8 +12,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "006"
-down_revision: Union[str, None] = "005"
+revision: str = "007"
+down_revision: Union[str, None] = "006"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

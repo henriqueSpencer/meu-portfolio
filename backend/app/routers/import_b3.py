@@ -130,6 +130,8 @@ async def preview_b3(
         raise HTTPException(400, "Arquivo deve ser .xlsx")
 
     content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Arquivo muito grande (max 10MB)")
     wb = load_workbook(BytesIO(content), data_only=True)
     ws = wb.active
 
