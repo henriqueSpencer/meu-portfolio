@@ -24,6 +24,7 @@ import TransactionsTab from './components/tabs/TransactionsTab';
 
 // Auth
 import LoginPage from './components/LoginPage';
+import LandingPage from './components/LandingPage';
 import ReLoginModal from './components/ReLoginModal';
 import AdminLayout from './components/AdminLayout';
 
@@ -123,9 +124,9 @@ function App() {
     );
   }
 
-  // Not authenticated -> Login page
+  // Not authenticated -> Landing page
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return <LandingPage />;
   }
 
   // Admin -> Admin layout
